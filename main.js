@@ -25,7 +25,18 @@ function setupAutoUpdate() {
     autoUpdater.on('update-available', i => setUpdateStatus({ state: 'downloading', version: i.version }));
     autoUpdater.on('update-not-available', () => setUpdateStatus({ state: 'none' }));
     autoUpdater.on('update-downloaded', i => setUpdateStatus({ state: 'ready', version: i.version }));
-    autoUpdater.on('error', e => setUpdateStatus({ state: 'error', error: String(e.message || e) }));
+    let triedNoAuth = false;
+    autoUpdater.on('error', e => {
+      const msg = String(e.message || e);
+      // токен могли отозвать — публичные релизы доступны и без него
+      if (!triedNoAuth && /401|403|Bad credentials/i.test(msg)) {
+        triedNoAuth = true;
+        autoUpdater.setFeedURL({ provider: 'github', owner: GH_OWNER, repo: GH_REPO });
+        autoUpdater.checkForUpdates().catch(() => {});
+        return;
+      }
+      setUpdateStatus({ state: 'error', error: msg });
+    });
     ipcMain.handle('install-update', () => autoUpdater.quitAndInstall());
     ipcMain.handle('check-update', () => { autoUpdater.checkForUpdates().catch(() => {}); });
     autoUpdater.checkForUpdates().catch(() => {});

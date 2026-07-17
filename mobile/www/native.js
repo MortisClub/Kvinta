@@ -109,10 +109,12 @@ window.KV_MOBILE = true;
     async checkUpdate() {
       try {
         const gh = window.KV_GH || {};
-        if (!gh.token) throw new Error('нет данных для обновлений');
-        const res = await fetch(`https://api.github.com/repos/${gh.owner}/${gh.repo}/releases/latest`, {
-          headers: { 'Authorization': 'Bearer ' + gh.token, 'Accept': 'application/vnd.github+json' }
-        });
+        const api = `https://api.github.com/repos/${gh.owner}/${gh.repo}/releases/latest`;
+        let res = gh.token
+          ? await fetch(api, { headers: { 'Authorization': 'Bearer ' + gh.token, 'Accept': 'application/vnd.github+json' } })
+          : await fetch(api, { headers: { 'Accept': 'application/vnd.github+json' } });
+        // токен мог протухнуть — для публичного репозитория он и не нужен
+        if (!res.ok && gh.token) res = await fetch(api, { headers: { 'Accept': 'application/vnd.github+json' } });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const rel = await res.json();
         const version = String(rel.tag_name || '').replace(/^v/, '');
@@ -125,42 +127,58 @@ window.KV_MOBILE = true;
           if ((next[i] || 0) < (cur[i] || 0)) break;
         }
         if (!apk || !newer) return { ok: true, update: false, version };
-        return { ok: true, update: true, version, assetId: apk.id, size: apk.size };
+        return { ok: true, update: true, version, assetId: apk.id, size: apk.size, apkUrl: apk.browser_download_url };
       } catch (e) {
         return { ok: false, error: String(e.message || e) };
       }
     },
 
     // Качает APK релиза и открывает системный установщик
-    async downloadUpdate(assetId) {
+    async downloadUpdate(assetId, directUrl) {
       try {
         const gh = window.KV_GH || {};
         const assetUrl = `https://api.github.com/repos/${gh.owner}/${gh.repo}/releases/assets/${assetId}`;
         const auth = { 'Authorization': 'Bearer ' + gh.token, 'Accept': 'application/octet-stream' };
-        // GitHub отвечает редиректом на S3, куда нельзя пересылать Authorization —
-        // поэтому редирект разбираем вручную
-        let r = await Http.request({
-          url: assetUrl, method: 'GET', headers: auth,
-          disableRedirects: true, connectTimeout: 30000, readTimeout: 30000
-        });
-        let apkB64;
-        if (r.status >= 300 && r.status < 400) {
-          const loc = r.headers.Location || r.headers.location;
-          if (!loc) throw new Error('редирект без Location');
-          const r2 = await Http.request({
-            url: loc, method: 'GET', responseType: 'blob',
+        let apkB64 = null;
+        if (gh.token) {
+          try {
+            // GitHub отвечает редиректом на S3, куда нельзя пересылать Authorization —
+            // поэтому редирект разбираем вручную
+            let r = await Http.request({
+              url: assetUrl, method: 'GET', headers: auth,
+              disableRedirects: true, connectTimeout: 30000, readTimeout: 30000
+            });
+            if (r.status >= 300 && r.status < 400) {
+              const loc = r.headers.Location || r.headers.location;
+              if (!loc) throw new Error('редирект без Location');
+              const r2 = await Http.request({
+                url: loc, method: 'GET', responseType: 'blob',
+                connectTimeout: 30000, readTimeout: 600000
+              });
+              if (r2.status < 200 || r2.status >= 300) throw new Error('HTTP ' + r2.status);
+              apkB64 = r2.data;
+            } else if (r.status >= 200 && r.status < 300) {
+              r = await Http.request({
+                url: assetUrl, method: 'GET', headers: auth, responseType: 'blob',
+                connectTimeout: 30000, readTimeout: 600000
+              });
+              apkB64 = r.data;
+            } else {
+              throw new Error('HTTP ' + r.status);
+            }
+          } catch (e) {
+            if (!directUrl) throw e;
+          }
+        }
+        if (!apkB64) {
+          // публичный релиз качается по прямой ссылке без токена
+          if (!directUrl) throw new Error('нет ссылки на файл');
+          const r = await Http.request({
+            url: directUrl, method: 'GET', responseType: 'blob',
             connectTimeout: 30000, readTimeout: 600000
           });
-          if (r2.status < 200 || r2.status >= 300) throw new Error('HTTP ' + r2.status);
-          apkB64 = r2.data;
-        } else if (r.status >= 200 && r.status < 300) {
-          r = await Http.request({
-            url: assetUrl, method: 'GET', headers: auth, responseType: 'blob',
-            connectTimeout: 30000, readTimeout: 600000
-          });
+          if (r.status < 200 || r.status >= 300) throw new Error('HTTP ' + r.status);
           apkB64 = r.data;
-        } else {
-          throw new Error('HTTP ' + r.status);
         }
         await FS.writeFile({ path: 'update/kvinta.apk', directory: 'CACHE', recursive: true, data: apkB64 });
         const u = await FS.getUri({ path: 'update/kvinta.apk', directory: 'CACHE' });

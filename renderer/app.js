@@ -1155,7 +1155,7 @@ function bindUpdateBox() {
     if (u.state === 'ready') { window.kvinta.installUpdate(); return; }
     if (u.state === 'available' && window.KV_MOBILE) {
       toast(`Скачиваю Kvinta ${u.version}… это займёт немного времени`, 3500);
-      const r = await window.kvinta.downloadUpdate(u.assetId);
+      const r = await window.kvinta.downloadUpdate(u.assetId, u.apkUrl);
       if (r.ok) toast('Готово — подтверди установку', 4000);
       else toast('Не удалось скачать: ' + r.error);
     }
@@ -1165,7 +1165,7 @@ function bindUpdateBox() {
 async function mobileCheckUpdate(manual) {
   const r = await window.kvinta.checkUpdate();
   if (r.ok && r.update) {
-    state.update = { state: 'available', version: r.version, assetId: r.assetId };
+    state.update = { state: 'available', version: r.version, assetId: r.assetId, apkUrl: r.apkUrl };
     if (!manual) toast(`Вышла Kvinta ${r.version} — обновись в настройках`, 4000);
     refreshUpdateBox();
   } else if (manual) {
