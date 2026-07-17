@@ -24,7 +24,7 @@
     "appId": "com.mortisclub.kvinta",
     "electronDist": "node_modules/electron/dist",
     "productName": "Kvinta",
-    "artifactName": "${productName}-Setup-${version}.${ext}",
+    "artifactName": "${productName}-${version}-Setup.${ext}",
     "directories": {
       "output": "dist"
     },
@@ -41,9 +41,18 @@
       "icon": "assets/icon.ico"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
       "perMachine": false,
       "shortcutName": "Kvinta",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "installerSidebar": "assets/installer-sidebar.bmp",
+      "uninstallerSidebar": "assets/installer-sidebar.bmp",
       "deleteAppDataOnUninstall": false
     },
     "publish": {

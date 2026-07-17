@@ -52,8 +52,8 @@ fs.copyFileSync(apkSrc, apkDst);
 run(`git add -A && git commit -m "v${version}"`);
 run('git push');
 const assets = [
-  path.join(ROOT, 'dist', `Kvinta-Setup-${version}.exe`),
-  path.join(ROOT, 'dist', `Kvinta-Setup-${version}.exe.blockmap`),
+  path.join(ROOT, 'dist', `Kvinta-${version}-Setup.exe`),
+  path.join(ROOT, 'dist', `Kvinta-${version}-Setup.exe.blockmap`),
   path.join(ROOT, 'dist', 'latest.yml'),
   apkDst
 ].map(p => `"${p}"`).join(' ');

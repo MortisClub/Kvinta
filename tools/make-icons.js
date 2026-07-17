@@ -183,6 +183,78 @@ function writeIco(file, sizes, mode) {
   console.log('✓', path.relative(ROOT, file), sizes.join('/'));
 }
 
+// ---------- BMP для боковой панели инсталлятора (NSIS, 164×314, 24-бит) ----------
+function renderSidebar(W, H) {
+  const SS = 3, NW = W * SS, NH = H * SS;
+  const out = new Uint8Array(W * H * 3);
+  const scale = 0.62 * NW / 44;
+  const cx = NW / 2, cy = NH * 0.34;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let R = 0, G = 0, B = 0;
+      for (let sy = 0; sy < SS; sy++) {
+        for (let sx = 0; sx < SS; sx++) {
+          const u = x * SS + sx + 0.5, v = y * SS + sy + 0.5;
+          const nx = u / NW, ny = v / NH;
+          const lu = (u - cx) / scale + 22, lv = (v - cy) / scale + 22;
+
+          const d1 = Math.hypot(nx - 0.8, ny - 0.05) / 1.1;
+          const f1 = Math.pow(clamp(1 - d1, 0, 1), 1.6);
+          let r = lerp(BG[0], GLOW_BG[0], f1);
+          let g = lerp(BG[1], GLOW_BG[1], f1);
+          let b = lerp(BG[2], GLOW_BG[2], f1);
+          const d2 = Math.hypot((nx - 0.5) * 1.2, (ny - 0.34) * (NH / NW) * 1.2) / 0.5;
+          const f2 = Math.pow(clamp(1 - d2, 0, 1), 2);
+          r = clamp(r + C1[0] * f2 * 0.13, 0, 255);
+          g = clamp(g + C1[1] * f2 * 0.13, 0, 255);
+          b = clamp(b + C1[2] * f2 * 0.13, 0, 255);
+
+          for (const rc of BARS) {
+            if (rrectDist(lu, lv, rc) <= 0) {
+              const t = clamp(((lu - 3) / 38 + (41 - lv) / 38) / 2, 0, 1);
+              r = lerp(C1[0], C2[0], t);
+              g = lerp(C1[1], C2[1], t);
+              b = lerp(C1[2], C2[2], t);
+              break;
+            }
+          }
+          R += r; G += g; B += b;
+        }
+      }
+      const n = SS * SS, i = (y * W + x) * 3;
+      out[i] = Math.round(R / n); out[i + 1] = Math.round(G / n); out[i + 2] = Math.round(B / n);
+    }
+  }
+  return out;
+}
+
+function writeBmp(file, W, H) {
+  const rgb = renderSidebar(W, H);
+  const rowSize = Math.ceil(W * 3 / 4) * 4;
+  const dataSize = rowSize * H;
+  const buf = Buffer.alloc(54 + dataSize);
+  buf.write('BM', 0, 'ascii');
+  buf.writeUInt32LE(54 + dataSize, 2);
+  buf.writeUInt32LE(54, 10);
+  buf.writeUInt32LE(40, 14);
+  buf.writeInt32LE(W, 18);
+  buf.writeInt32LE(H, 22);
+  buf.writeUInt16LE(1, 26);
+  buf.writeUInt16LE(24, 28);
+  buf.writeUInt32LE(dataSize, 34);
+  for (let y = 0; y < H; y++) {
+    const row = 54 + (H - 1 - y) * rowSize; // строки снизу вверх
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 3;
+      buf[row + x * 3] = rgb[i + 2];     // BGR
+      buf[row + x * 3 + 1] = rgb[i + 1];
+      buf[row + x * 3 + 2] = rgb[i];
+    }
+  }
+  fs.writeFileSync(file, buf);
+  console.log('✓', path.relative(ROOT, file), W + 'x' + H);
+}
+
 // ---------- выхлоп ----------
 const DENSITIES = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
 for (const [d, k] of Object.entries(DENSITIES)) {
@@ -194,4 +266,5 @@ for (const [d, k] of Object.entries(DENSITIES)) {
 writePng(path.join(ASSETS, 'icon.png'), 512, 'legacy');
 writePng(path.join(ASSETS, 'icon-playstore.png'), 512, 'square');
 writeIco(path.join(ASSETS, 'icon.ico'), [256, 128, 64, 48, 32, 24, 16], 'legacy');
+writeBmp(path.join(ASSETS, 'installer-sidebar.bmp'), 164, 314);
 console.log('Готово.');
