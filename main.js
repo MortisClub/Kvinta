@@ -3,9 +3,44 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const { createHash } = require('crypto');
-const { YANDEX_TOKEN } = require('./config');
+const { YANDEX_TOKEN, GH_OWNER, GH_REPO, GH_TOKEN } = require('./config');
 
 let win = null;
+
+// ---------- Автообновление (релизы на GitHub) ----------
+let updateStatus = { state: 'idle' };
+
+function setUpdateStatus(s) {
+  updateStatus = s;
+  if (win && !win.isDestroyed()) win.webContents.send('update-status', s);
+}
+
+function setupAutoUpdate() {
+  if (!app.isPackaged) { updateStatus = { state: 'dev' }; return; }
+  try {
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.setFeedURL({ provider: 'github', owner: GH_OWNER, repo: GH_REPO, private: true, token: GH_TOKEN });
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.on('update-available', i => setUpdateStatus({ state: 'downloading', version: i.version }));
+    autoUpdater.on('update-not-available', () => setUpdateStatus({ state: 'none' }));
+    autoUpdater.on('update-downloaded', i => setUpdateStatus({ state: 'ready', version: i.version }));
+    autoUpdater.on('error', e => setUpdateStatus({ state: 'error', error: String(e.message || e) }));
+    ipcMain.handle('install-update', () => autoUpdater.quitAndInstall());
+    ipcMain.handle('check-update', () => { autoUpdater.checkForUpdates().catch(() => {}); });
+    autoUpdater.checkForUpdates().catch(() => {});
+    setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
+  } catch (e) {
+    console.warn('autoupdate off:', e.message);
+  }
+}
+
+ipcMain.handle('app-version', () => app.getVersion());
+ipcMain.handle('update-status', () => updateStatus);
+if (!app.isPackaged) {
+  ipcMain.handle('install-update', () => {});
+  ipcMain.handle('check-update', () => {});
+}
 
 // Прокси-схема kvs:// — проксирует аудиопотоки через main-процесс и добавляет
 // CORS-заголовки, чтобы Web Audio (эквалайзер) не глушил звук из-за taint-проверки
@@ -61,6 +96,7 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  setupAutoUpdate();
 
   // Медиаклавиши клавиатуры управляют плеером
   globalShortcut.register('MediaPlayPause', () => win && win.webContents.send('media-key', 'playpause'));

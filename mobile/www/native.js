@@ -105,6 +105,72 @@ window.KV_MOBILE = true;
       }
     },
 
+    // Проверка обновлений: последний релиз в репозитории против текущей версии
+    async checkUpdate() {
+      try {
+        const gh = window.KV_GH || {};
+        if (!gh.token) throw new Error('нет данных для обновлений');
+        const res = await fetch(`https://api.github.com/repos/${gh.owner}/${gh.repo}/releases/latest`, {
+          headers: { 'Authorization': 'Bearer ' + gh.token, 'Accept': 'application/vnd.github+json' }
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const rel = await res.json();
+        const version = String(rel.tag_name || '').replace(/^v/, '');
+        const apk = (rel.assets || []).find(a => /\.apk$/i.test(a.name));
+        const cur = String(window.KV_VERSION || '0').split('.').map(n => +n || 0);
+        const next = version.split('.').map(n => +n || 0);
+        let newer = false;
+        for (let i = 0; i < 3; i++) {
+          if ((next[i] || 0) > (cur[i] || 0)) { newer = true; break; }
+          if ((next[i] || 0) < (cur[i] || 0)) break;
+        }
+        if (!apk || !newer) return { ok: true, update: false, version };
+        return { ok: true, update: true, version, assetId: apk.id, size: apk.size };
+      } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+      }
+    },
+
+    // Качает APK релиза и открывает системный установщик
+    async downloadUpdate(assetId) {
+      try {
+        const gh = window.KV_GH || {};
+        const assetUrl = `https://api.github.com/repos/${gh.owner}/${gh.repo}/releases/assets/${assetId}`;
+        const auth = { 'Authorization': 'Bearer ' + gh.token, 'Accept': 'application/octet-stream' };
+        // GitHub отвечает редиректом на S3, куда нельзя пересылать Authorization —
+        // поэтому редирект разбираем вручную
+        let r = await Http.request({
+          url: assetUrl, method: 'GET', headers: auth,
+          disableRedirects: true, connectTimeout: 30000, readTimeout: 30000
+        });
+        let apkB64;
+        if (r.status >= 300 && r.status < 400) {
+          const loc = r.headers.Location || r.headers.location;
+          if (!loc) throw new Error('редирект без Location');
+          const r2 = await Http.request({
+            url: loc, method: 'GET', responseType: 'blob',
+            connectTimeout: 30000, readTimeout: 600000
+          });
+          if (r2.status < 200 || r2.status >= 300) throw new Error('HTTP ' + r2.status);
+          apkB64 = r2.data;
+        } else if (r.status >= 200 && r.status < 300) {
+          r = await Http.request({
+            url: assetUrl, method: 'GET', headers: auth, responseType: 'blob',
+            connectTimeout: 30000, readTimeout: 600000
+          });
+          apkB64 = r.data;
+        } else {
+          throw new Error('HTTP ' + r.status);
+        }
+        await FS.writeFile({ path: 'update/kvinta.apk', directory: 'CACHE', recursive: true, data: apkB64 });
+        const u = await FS.getUri({ path: 'update/kvinta.apk', directory: 'CACHE' });
+        await Cap.Plugins.ApkInstaller.install({ path: u.uri.replace(/^file:\/\//, '') });
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+      }
+    },
+
     async deleteDownload(p) {
       try { await FS.deleteFile({ path: p }); } catch {}
       try { await FS.deleteFile({ path: p.replace(/\.mp3$/, '.jpg') }); } catch {}

@@ -23,6 +23,7 @@ const state = {
   }),
   history: store.get('kv.history', []),             // недавно прослушанные
   sleep: { minutes: 0, until: 0, timerId: null, stopAfterTrack: false },
+  update: { state: 'idle', version: null, assetId: null },
   queue: [],
   queueName: '',
   order: [],          // порядок воспроизведения (индексы queue)
@@ -1118,6 +1119,77 @@ function renderDownloads() {
   highlightPlaying();
 }
 
+// --- Обновления ---
+let APP_VERSION = window.KV_VERSION || '';
+let manualCheckPending = false;
+
+function updateBoxHtml() {
+  const u = state.update;
+  if (u.state === 'available') {
+    return `<div class="hint">Доступна версия ${esc(u.version)}</div>
+      <button class="btn" id="updGo">Скачать и установить</button>`;
+  }
+  if (u.state === 'downloading') return `<div class="hint">Скачиваю обновление ${esc(u.version || '')}…</div>`;
+  if (u.state === 'ready') return `<button class="btn" id="updGo">Перезапустить и обновить до ${esc(u.version)}</button>`;
+  if (u.state === 'dev') return '';
+  return `<button class="btn secondary" id="updCheck">Проверить обновления</button>`;
+}
+
+function refreshUpdateBox() {
+  const box = $('#updBox');
+  if (box) { box.innerHTML = updateBoxHtml(); bindUpdateBox(); }
+}
+
+function bindUpdateBox() {
+  $('#updCheck')?.addEventListener('click', async () => {
+    toast('Проверяю обновления…', 1500);
+    if (window.KV_MOBILE) {
+      await mobileCheckUpdate(true);
+    } else {
+      manualCheckPending = true;
+      window.kvinta.checkUpdate();
+    }
+  });
+  $('#updGo')?.addEventListener('click', async () => {
+    const u = state.update;
+    if (u.state === 'ready') { window.kvinta.installUpdate(); return; }
+    if (u.state === 'available' && window.KV_MOBILE) {
+      toast(`Скачиваю Kvinta ${u.version}… это займёт немного времени`, 3500);
+      const r = await window.kvinta.downloadUpdate(u.assetId);
+      if (r.ok) toast('Готово — подтверди установку', 4000);
+      else toast('Не удалось скачать: ' + r.error);
+    }
+  });
+}
+
+async function mobileCheckUpdate(manual) {
+  const r = await window.kvinta.checkUpdate();
+  if (r.ok && r.update) {
+    state.update = { state: 'available', version: r.version, assetId: r.assetId };
+    if (!manual) toast(`Вышла Kvinta ${r.version} — обновись в настройках`, 4000);
+    refreshUpdateBox();
+  } else if (manual) {
+    toast(r.ok ? 'У тебя последняя версия ✓' : 'Не удалось проверить: ' + r.error, 2200);
+  }
+}
+
+if (window.KV_MOBILE) {
+  setTimeout(() => mobileCheckUpdate(false), 5000);
+} else if (window.kvinta.onUpdateStatus) {
+  window.kvinta.appVersion().then(v => { APP_VERSION = v; });
+  window.kvinta.updateStatus().then(s => { state.update = s; refreshUpdateBox(); });
+  window.kvinta.onUpdateStatus(s => {
+    state.update = s;
+    if (s.state === 'ready') toast(`Обновление ${s.version} готово — установи в настройках`, 4500);
+    if (manualCheckPending) {
+      if (s.state === 'none') toast('У тебя последняя версия ✓', 2200);
+      if (s.state === 'error') toast('Не удалось проверить: ' + s.error, 2600);
+      if (s.state !== 'downloading') manualCheckPending = false;
+    }
+    refreshUpdateBox();
+  });
+}
+
 // --- Настройки ---
 function renderSettings() {
   const s = state.settings;
@@ -1204,11 +1276,12 @@ function renderSettings() {
 
     <div class="settings-card">
       <h3>О приложении</h3>
-      <div class="hint" style="margin-bottom:0">
-        <b style="color:var(--text)">Kvinta</b> — локальный музыкальный сервис.<br>
-        Избранное, плейлисты и загрузки хранятся только на этом компьютере.<br><br>
+      <div class="hint">
+        <b style="color:var(--text)">Kvinta</b> ${APP_VERSION ? 'v' + APP_VERSION : ''} — локальный музыкальный сервис.<br>
+        Избранное, плейлисты и загрузки хранятся только на этом устройстве.<br><br>
         © MortisClub 2026
       </div>
+      <div id="updBox">${updateBoxHtml()}</div>
     </div>`;
 
   // --- тонкие настройки воспроизведения ---
@@ -1225,6 +1298,7 @@ function renderSettings() {
     const b = e.target.closest('.chip');
     if (b) setSleep(+b.dataset.min);
   });
+  bindUpdateBox();
   $('#setSpeed').addEventListener('input', e => {
     s.speed = e.target.value / 100;
     $('#speedVal').textContent = '×' + s.speed.toFixed(2);
