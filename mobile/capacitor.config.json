@@ -1,0 +1,9 @@
+{
+  "appId": "com.mortisclub.kvinta",
+  "appName": "Kvinta",
+  "webDir": "www",
+  "backgroundColor": "#0d0709",
+  "plugins": {
+    "CapacitorHttp": { "enabled": true }
+  }
+}

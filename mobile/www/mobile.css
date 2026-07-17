@@ -1,0 +1,167 @@
+/* ============ Kvinta — мобильная раскладка (Capacitor) ============ */
+
+.desktop-only { display: none !important; }
+.settings-row.mobile-only { display: flex !important; }
+.hint.mobile-only { display: block !important; }
+
+#app {
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-areas: "main" "player" "tabbar";
+  height: 100dvh;
+}
+#sidebar { display: none; }
+
+#main { padding-top: env(safe-area-inset-top); }
+#viewContainer { padding: 18px 14px 30px; }
+h1.page-title { font-size: 25px; margin-bottom: 14px; }
+h2.row-title { font-size: 17px; margin: 20px 0 10px; }
+
+.hero { padding: 20px 18px; }
+.hero h1 { font-size: 25px; }
+.hero p { font-size: 13.5px; }
+.hero .bars { display: none; }
+
+.card-row { grid-auto-columns: 128px; gap: 12px; }
+.card { padding: 9px; }
+.card-play { opacity: 1; transform: none; right: 14px; bottom: 56px; width: 36px; height: 36px; }
+
+/* Список треков: без номера и длительности, кнопки видимы всегда (тач) */
+.tl-head { display: none; }
+.track-row { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; padding: 6px 4px; }
+.tr-num, .tr-dur { display: none; }
+.tr-cover { width: 40px; height: 40px; }
+.tr-actions { gap: 0; }
+.tr-actions .icon-btn { opacity: 1; width: 32px; height: 32px; }
+
+/* ===== Мини-плеер: одна строка, тап открывает «Сейчас играет» ===== */
+#playerbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px 8px;
+  position: relative;
+}
+.pb-left { flex: 1; min-width: 0; }
+.pb-cover { width: 42px; height: 42px; }
+.pb-center { display: contents; }
+.pb-controls { gap: 0; }
+#pbShuffle, #pbRepeat { display: none; }
+.play-btn { width: 40px; height: 40px; margin: 0 2px; }
+.play-btn svg { width: 20px; height: 20px; }
+.pb-progress {
+  position: absolute; top: -2px; left: 0; right: 0;
+  max-width: none; gap: 0; z-index: 1;
+}
+.pb-progress span { display: none; }
+#pbSeek { height: 3px; border-radius: 0; }
+.pb-right { display: none; }
+
+/* ===== Нижняя навигация ===== */
+#tabbar {
+  grid-area: tabbar;
+  display: flex;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  padding: 4px 2px calc(4px + env(safe-area-inset-bottom));
+}
+#tabbar .nav-item {
+  flex: 1 1 0;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 0 5px;
+  border-radius: 10px;
+}
+#tabbar .nav-item svg { width: 21px; height: 21px; }
+#tabbar .tab-label {
+  font-size: 8.5px; font-weight: 600; letter-spacing: .2px;
+  white-space: nowrap; overflow: hidden; max-width: 100%;
+}
+
+/* ===== Полноэкранный «Сейчас играет» ===== */
+#npSheet {
+  position: fixed; inset: 0; z-index: 350;
+  background: var(--bg-grad);
+  background-color: var(--bg);
+  display: flex; flex-direction: column;
+  padding: calc(14px + env(safe-area-inset-top)) 22px calc(22px + env(safe-area-inset-bottom));
+  transform: translateY(103%);
+  transition: transform .3s cubic-bezier(.2, .8, .2, 1);
+}
+#npSheet.open { transform: none; }
+
+.np-head { display: flex; align-items: center; justify-content: space-between; }
+.np-head .icon-btn { width: 40px; height: 40px; }
+.np-head .icon-btn svg { width: 22px; height: 22px; }
+.np-src {
+  flex: 1; text-align: center; color: var(--muted);
+  font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.np-cover-wrap { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; padding: 12px 0; }
+.np-cover {
+  width: min(80vw, 46vh, 360px); aspect-ratio: 1;
+  border-radius: 20px;
+  background: var(--card) center/cover no-repeat;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .6);
+}
+
+.np-meta { display: flex; align-items: center; gap: 12px; justify-content: space-between; margin-bottom: 12px; }
+.np-title { font: 700 20px 'Montserrat', sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np-artist { color: var(--muted); font-size: 14px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np-meta .icon-btn { width: 42px; height: 42px; flex: none; }
+.np-meta .icon-btn svg { width: 24px; height: 24px; }
+
+#npSeek {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 4px; border-radius: 2px; cursor: pointer;
+  background: linear-gradient(to right, var(--accent) var(--fill, 0%), rgba(255, 255, 255, .15) var(--fill, 0%));
+}
+#npSeek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .5);
+}
+.np-times {
+  display: flex; justify-content: space-between;
+  color: var(--muted); font-size: 11.5px; margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.np-controls { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 14px; }
+.np-controls .icon-btn { width: 46px; height: 46px; }
+.np-controls .icon-btn svg { width: 24px; height: 24px; }
+.np-controls .play-btn { width: 64px; height: 64px; margin: 0; }
+.np-controls .play-btn svg { width: 30px; height: 30px; }
+#npRepeat { position: relative; }
+.np-rep1 {
+  position: absolute; top: 6px; right: 9px;
+  font-size: 9px; font-weight: 700; color: var(--accent);
+  display: none;
+}
+#npRepeat.one .np-rep1 { display: block; }
+
+.np-extra { display: flex; justify-content: center; gap: 10px; margin-top: 16px; }
+.np-extra .chip { padding: 9px 18px; }
+.np-extra .chip.active { background: var(--accent-grad); color: #fff; border-color: transparent; }
+
+/* ===== Плейлисты / настройки ===== */
+.pl-detail-head { flex-direction: column; align-items: flex-start; gap: 14px; }
+.pl-detail-head h1 { font-size: 28px; }
+.pl-detail-cover { width: 140px; height: 140px; }
+
+.settings-row { flex-wrap: wrap; }
+.h-slider { width: 100%; }
+.eq-bands { gap: 3px; }
+.eq-band input[type=range] { width: 30px; height: 132px; }
+
+/* ===== Меню и тосты поверх «Сейчас играет» ===== */
+.ctx-menu { z-index: 400; }
+#toasts {
+  left: 12px; right: 12px;
+  bottom: calc(126px + env(safe-area-inset-bottom));
+  align-items: center; z-index: 420;
+}
+.toast { max-width: 100%; }

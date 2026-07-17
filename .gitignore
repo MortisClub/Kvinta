@@ -1,0 +1,13 @@
+node_modules/
+err.log
+out.log
+
+# Android build
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/capacitor-cordova-android-plugins/build/
+mobile/android/local.properties
+mobile/android/.idea/
+*.apk
+*.keystore
