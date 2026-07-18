@@ -10,6 +10,7 @@
   height: 100dvh;
 }
 #sidebar { display: none; }
+#titlebar { display: none; }
 
 #main { padding-top: env(safe-area-inset-top); }
 #viewContainer { padding: 18px 14px 30px; }

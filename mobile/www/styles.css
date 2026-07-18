@@ -48,9 +48,26 @@ body {
 #app {
   display: grid;
   grid-template-columns: 236px 1fr;
-  grid-template-rows: 1fr auto;
-  grid-template-areas: "sidebar main" "player player";
+  grid-template-rows: 36px 1fr auto;
+  grid-template-areas: "titlebar titlebar" "sidebar main" "player player";
   height: 100vh;
+}
+
+#titlebar {
+  grid-area: titlebar;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+}
+#titlebar .tb-title {
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 3px;
+  color: var(--muted);
 }
 
 #sidebar {
@@ -461,6 +478,19 @@ select.kv-select {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .ctx-menu button:hover { background: rgba(255,30,66,.18); }
+
+#tooltip {
+  position: fixed; z-index: 500;
+  background: #2a161d; border: 1px solid rgba(255,255,255,.12);
+  color: var(--text); font-size: 12px;
+  padding: 6px 11px; border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.5);
+  pointer-events: none;
+  opacity: 0; transform: translateY(3px);
+  transition: opacity .12s, transform .12s;
+  white-space: nowrap;
+}
+#tooltip.show { opacity: 1; transform: none; }
 
 #toasts {
   position: fixed; bottom: 108px; right: 24px; z-index: 300;

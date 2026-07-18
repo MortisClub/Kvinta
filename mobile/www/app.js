@@ -80,6 +80,7 @@ function normTrack(t) {
     artist: (t.artists || []).map(a => a.name).join(', ') || 'Неизвестный артист',
     artists: (t.artists || []).filter(a => a.id).map(a => ({ id: a.id, name: a.name })),
     album: (t.albums && t.albums[0] && t.albums[0].title) || '',
+    albumId: (t.albums && t.albums[0] && t.albums[0].id) || null,
     art150: ymCover(t.coverUri, '100x100'),
     art480: ymCover(t.coverUri, '400x400'),
     duration: Math.round((t.durationMs || 0) / 1000),
@@ -315,8 +316,10 @@ function nextTrack(auto = false) {
   if (auto && state.repeat === 'one') { audio.currentTime = 0; audio.play(); return; }
   let pos = state.orderPos + 1;
   if (pos >= state.order.length) {
-    if (state.repeat === 'all' || !auto) pos = 0;
-    else { audio.pause(); updatePlayIcon(); return; }
+    if (state.repeat === 'all' || !auto) {
+      if (state.shuffle) buildOrder();
+      pos = 0;
+    } else { audio.pause(); updatePlayIcon(); return; }
   }
   state.orderPos = pos;
   playTrack(state.queue[state.order[pos]]);
@@ -347,7 +350,7 @@ function updatePlayerBar() {
   $('#app').classList.add('has-track');
   $('#pbTitle').textContent = t.title;
   $('#pbArtist').textContent = t.artist;
-  $('#pbArtist').classList.toggle('link', !window.KV_MOBILE && !!(t.artists && t.artists.length));
+  $('#pbArtist').classList.toggle('link', !window.KV_MOBILE && !!t.artist);
   const dl = dlById().get(t.id);
   const art = t.art480 || t.art150 || (dl && dl.cover ? fileUrl(dl.cover) : null);
   $('#pbCover').style.backgroundImage = art ? `url("${art}")` : 'none';
@@ -451,13 +454,30 @@ $('#pbRepeat').addEventListener('click', () => {
   state.repeat = state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off';
   $('#pbRepeat').classList.toggle('on', state.repeat !== 'off');
   $('#pbRepeat').classList.toggle('one', state.repeat === 'one');
+  const label = state.repeat === 'off' ? 'Повтор выключен' : state.repeat === 'all' ? 'Повтор очереди' : 'Повтор одного трека';
+  $('#pbRepeat').dataset.tip = label;
+  toast(label, 1400);
 });
 $('#pbLike').addEventListener('click', () => state.current && toggleFav(state.current));
 $('#pbEq').addEventListener('click', () => switchView('settings'));
+async function openArtistFromTrack(t) {
+  if (!t) return;
+  if (t.artists && t.artists.length) { switchView('artist', t.artists[0].id); return; }
+  const name = (t.artist || '').split(',')[0].trim();
+  if (!name) return;
+  try {
+    const data = await ym(`/search?text=${encodeURIComponent(name)}&type=artist&page=0&nocorrect=false`, 'artist-q-' + name);
+    const a = data.artists && data.artists.results && data.artists.results[0];
+    if (a && a.id) switchView('artist', a.id);
+    else toast('Артист не найден');
+  } catch {
+    toast('Не удалось открыть артиста');
+  }
+}
+
 $('#pbArtist').addEventListener('click', () => {
   if (window.KV_MOBILE) return;
-  const t = state.current;
-  if (t && t.artists && t.artists.length) switchView('artist', t.artists[0].id);
+  openArtistFromTrack(state.current);
 });
 
 let volBeforeMute = 0.8;
@@ -588,9 +608,10 @@ function showTrackMenu(x, y, track, ctx) {
     state.playlists.forEach(p => { html += `<button data-a="pl" data-id="${p.id}">${esc(p.name)}</button>`; });
     html += '<button data-a="newpl">+ Новый плейлист…</button>';
   }
-  if (track.artists && track.artists.length) {
+  if ((track.artists && track.artists.length) || track.albumId) {
     html += '<div class="cm-head">Перейти</div>';
-    track.artists.slice(0, 3).forEach(a => { html += `<button data-a="artist" data-id="${a.id}">${esc(a.name)}</button>`; });
+    (track.artists || []).slice(0, 3).forEach(a => { html += `<button data-a="artist" data-id="${a.id}">${esc(a.name)}</button>`; });
+    if (track.albumId) html += `<button data-a="album" data-id="${track.albumId}">Альбом «${esc(track.album)}»</button>`;
   }
   if (ctx && ctx.playlistId) html += `<div class="cm-head">Плейлист</div><button data-a="rmpl">Убрать из этого плейлиста</button>`;
   menu.innerHTML = html;
@@ -607,6 +628,7 @@ function showTrackMenu(x, y, track, ctx) {
     if (a === 'fav') toggleFav(track);
     if (a === 'dl') downloadTrack(track);
     if (a === 'artist') { closeNpSheet(); switchView('artist', b.dataset.id); }
+    if (a === 'album') { closeNpSheet(); switchView('album', b.dataset.id); }
     if (a === 'pl') addToPlaylist(b.dataset.id, track);
     if (a === 'newpl') {
       const name = await askText('Новый плейлист', 'Название плейлиста');
@@ -791,15 +813,30 @@ function emptyStateHtml(title, text) {
 }
 
 const container = $('#viewContainer');
-let backTarget = null;
+let navStack = [];
+let backNav = false;
 
 function switchView(view, param = null) {
-  if (view === 'artist' && state.view !== 'artist') backTarget = { view: state.view, param: state.viewParam };
+  const detail = view === 'artist' || view === 'album';
+  if (!backNav) {
+    if (detail && (state.view !== view || String(state.viewParam) !== String(param))) {
+      navStack.push({ view: state.view, param: state.viewParam });
+      if (navStack.length > 20) navStack.shift();
+    }
+    if (!detail) navStack = [];
+  }
   state.view = view;
   state.viewParam = param;
   $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   renderView();
   $('#main').scrollTop = 0;
+}
+
+function goBack() {
+  const prev = navStack.pop() || { view: 'new', param: null };
+  backNav = true;
+  switchView(prev.view, prev.param);
+  backNav = false;
 }
 
 function renderView() {
@@ -812,6 +849,7 @@ function renderView() {
   if (v === 'downloads') return renderDownloads();
   if (v === 'settings') return renderSettings();
   if (v === 'artist') return renderArtist(state.viewParam);
+  if (v === 'album') return renderAlbum(state.viewParam);
 }
 
 async function renderNew() {
@@ -901,18 +939,61 @@ function albumCardRowEl(albums) {
       <div class="card-title">${esc(a.title)}</div>
       <div class="card-sub">${esc(artist || 'Альбом')}</div>
       <button class="card-play">${SVG.play}</button>`;
-    c.addEventListener('click', async () => {
-      toast('Загружаю альбом…', 1200);
-      try {
-        const full = await ym(`/albums/${a.id}/with-tracks`, 'album-' + a.id);
-        const tracks = extractTracks((full.volumes || []).flat());
-        if (tracks.length) playQueue(tracks, 0, full.title);
-        else toast('В альбоме нет доступных треков');
-      } catch { toast('Не удалось открыть альбом'); }
+    c.addEventListener('click', e => {
+      if (e.target.closest('.card-play')) { playAlbum(a.id, a.title); return; }
+      switchView('album', a.id);
     });
     row.appendChild(c);
   });
   return row;
+}
+
+async function loadAlbum(id) {
+  const full = await ym(`/albums/${id}/with-tracks`, 'album-' + id);
+  return { album: full, tracks: extractTracks((full.volumes || []).flat()) };
+}
+
+async function playAlbum(id, title) {
+  toast('Загружаю альбом…', 1200);
+  try {
+    const { album, tracks } = await loadAlbum(id);
+    if (tracks.length) playQueue(tracks, 0, album.title || title);
+    else toast('В альбоме нет доступных треков');
+  } catch { toast('Не удалось открыть альбом'); }
+}
+
+async function renderAlbum(id) {
+  container.innerHTML = loaderHtml;
+  try {
+    const { album, tracks } = await loadAlbum(id);
+    if (state.view !== 'album' || String(state.viewParam) !== String(id)) return;
+    const cov = album.coverUri ? ymCover(album.coverUri, '400x400') : null;
+    const artist = (album.artists || []).map(x => x.name).join(', ');
+    const meta = [album.year, album.genre, tracks.length ? tracks.length + ' трек(ов)' : null].filter(Boolean).join(' · ');
+    container.innerHTML = `
+      <button class="btn secondary" id="albumBack" style="margin-bottom:18px">← Назад</button>
+      <div class="pl-detail-head">
+        <div class="pl-detail-cover ${cov ? '' : 'pl-cover-gen'}" style="${cov ? `background:url('${cov}') center/cover` : `background:${PL_GRADS[0]}`}">${cov ? '' : esc((album.title || '?')[0].toUpperCase())}</div>
+        <div>
+          <div class="kind">Альбом</div>
+          <h1>${esc(album.title || 'Альбом')}</h1>
+          <div class="stats">${esc(artist)}${artist && meta ? ' · ' : ''}${esc(meta)}</div>
+          <div class="pl-actions">${tracks.length ? `<button class="btn" id="albumPlay">${SVG.play} Слушать</button>` : ''}</div>
+        </div>
+      </div>
+      <div id="albumBody"></div>`;
+    $('#albumBack').addEventListener('click', goBack);
+    if (tracks.length) {
+      $('#albumPlay').addEventListener('click', () => playQueue(tracks, 0, album.title));
+      $('#albumBody').appendChild(trackListEl(tracks, { name: album.title }));
+    } else {
+      $('#albumBody').innerHTML = emptyStateHtml('Пусто', 'В этом альбоме нет доступных треков.');
+    }
+    highlightPlaying();
+  } catch {
+    if (state.view !== 'album') return;
+    container.innerHTML = emptyStateHtml('Не удалось открыть альбом', 'Проверь соединение и попробуй ещё раз.');
+  }
 }
 
 let searchTimer = null;
@@ -1026,7 +1107,7 @@ async function renderArtist(id) {
         </div>
       </div>
       <div id="artistBody"></div>`;
-    $('#artistBack').addEventListener('click', () => backTarget ? switchView(backTarget.view, backTarget.param) : switchView('new'));
+    $('#artistBack').addEventListener('click', goBack);
     if (tracks.length) $('#artistPlay').addEventListener('click', () => playQueue(tracks, 0, a.name));
     const body = $('#artistBody');
     if (tracks.length) {
@@ -1592,8 +1673,9 @@ function setupMobileUi() {
   $('#npRepeat').addEventListener('click', () => { $('#pbRepeat').click(); syncNp(); });
   $('#npEq').addEventListener('click', () => { closeNp(); switchView('settings'); });
   $('#npArtist').addEventListener('click', () => {
-    const t = state.current;
-    if (t && t.artists && t.artists.length) { closeNp(); switchView('artist', t.artists[0].id); }
+    if (!state.current) return;
+    closeNp();
+    openArtistFromTrack(state.current);
   });
   $('#npSleep').addEventListener('click', e => {
     e.stopPropagation();
@@ -1631,9 +1713,36 @@ function setupMobileUi() {
   });
 }
 
+function setupTooltips() {
+  const tip = document.createElement('div');
+  tip.id = 'tooltip';
+  document.body.appendChild(tip);
+  const hide = () => tip.classList.remove('show');
+  document.addEventListener('mouseover', e => {
+    const el = e.target.closest('[title], [data-tip]');
+    if (!el) return;
+    if (el.title) { el.dataset.tip = el.title; el.removeAttribute('title'); }
+    if (!el.dataset.tip) return;
+    tip.textContent = el.dataset.tip;
+    tip.classList.add('show');
+    tip.style.left = '0px';
+    tip.style.top = '0px';
+    const r = el.getBoundingClientRect(), tr = tip.getBoundingClientRect();
+    const x = Math.max(8, Math.min(r.left + r.width / 2 - tr.width / 2, innerWidth - tr.width - 8));
+    let y = r.top - tr.height - 9;
+    if (y < 8) y = r.bottom + 9;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+    el.addEventListener('mouseleave', hide, { once: true });
+    el.addEventListener('mousedown', hide, { once: true });
+  });
+  document.addEventListener('scroll', hide, true);
+}
+
 $$('.nav-item').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
 $('#btnNewPlaylist').addEventListener('click', createPlaylistFlow);
 if (window.KV_MOBILE) setupMobileUi();
+else setupTooltips();
 
 audio.volume = state.settings.volume ?? 0.8;
 audio.playbackRate = state.settings.speed || 1;

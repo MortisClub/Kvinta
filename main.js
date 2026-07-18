@@ -60,6 +60,8 @@ function createWindow() {
     backgroundColor: '#0e0a0c',
     autoHideMenuBar: true,
     title: 'Kvinta',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#160a0f', symbolColor: '#f7eff1', height: 36 },
     icon: path.join(__dirname, 'assets', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -176,7 +178,8 @@ ipcMain.handle('download-track', async (_ev, track) => {
     const res = await fetch(url, { signal: AbortSignal.timeout(180000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const buf = Buffer.from(await res.arrayBuffer());
-    const file = path.join(downloadsDir(), `${safeName(track.artist)} - ${safeName(track.title)}.mp3`);
+    const name = `${safeName(track.artist)} - ${safeName(track.title)}`;
+    const file = path.join(downloadsDir(), name + '.mp3');
     await fsp.writeFile(file, buf);
 
     let coverFile = null;
@@ -184,7 +187,9 @@ ipcMain.handle('download-track', async (_ev, track) => {
       try {
         const cres = await fetch(track.artwork, { signal: AbortSignal.timeout(30000) });
         if (cres.ok) {
-          coverFile = file.replace(/\.mp3$/, '.jpg');
+          const coversDir = path.join(downloadsDir(), 'covers');
+          await fsp.mkdir(coversDir, { recursive: true });
+          coverFile = path.join(coversDir, name + '.jpg');
           await fsp.writeFile(coverFile, Buffer.from(await cres.arrayBuffer()));
         }
       } catch {}
@@ -199,6 +204,8 @@ ipcMain.handle('delete-download', async (_ev, filePath) => {
   try {
     await fsp.rm(filePath, { force: true });
     await fsp.rm(filePath.replace(/\.mp3$/, '.jpg'), { force: true });
+    const cover = path.join(path.dirname(filePath), 'covers', path.basename(filePath).replace(/\.mp3$/, '.jpg'));
+    await fsp.rm(cover, { force: true });
     return true;
   } catch {
     return false;
