@@ -470,3 +470,6 @@ select.kv-select {
 .pl-detail-cover.round { border-radius: 50%; }
 .tr-artist-name.link { cursor: pointer; }
 .tr-artist-name.link:hover { color: var(--text); text-decoration: underline; }
+
+.upd-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); margin-top: 10px; overflow: hidden; }
+.upd-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg,#ff1e42,#ff6a3d); transition: width .2s; }

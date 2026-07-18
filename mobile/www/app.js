@@ -1205,10 +1205,18 @@ function updateBoxHtml() {
   const u = state.update;
   if (u.state === 'available') {
     return `<div class="hint">Доступна версия ${esc(u.version)}</div>
-      <button class="btn" id="updGo">Скачать и установить</button>`;
+      <button class="btn" id="updGo">Обновить</button>`;
   }
-  if (u.state === 'downloading') return `<div class="hint">Скачиваю обновление ${esc(u.version || '')}…</div>`;
-  if (u.state === 'ready') return `<button class="btn" id="updGo">Перезапустить и обновить до ${esc(u.version)}</button>`;
+  if (u.state === 'downloading') {
+    if (window.KV_MOBILE) {
+      return `<div class="hint">Скачиваю ${esc(u.version || '')}… <span id="updPct">${u.percent || 0}%</span></div>
+        <div class="upd-bar"><i id="updBarFill" style="width:${u.percent || 0}%"></i></div>`;
+    }
+    return `<div class="hint">Скачиваю обновление ${esc(u.version || '')}…</div>`;
+  }
+  if (u.state === 'ready') {
+    return `<button class="btn" id="updGo">${window.KV_MOBILE ? `Установить ${esc(u.version)}` : `Перезапустить и обновить до ${esc(u.version)}`}</button>`;
+  }
   if (u.state === 'dev') return '';
   return `<button class="btn secondary" id="updCheck">Проверить обновления</button>`;
 }
@@ -1232,10 +1240,23 @@ function bindUpdateBox() {
     const u = state.update;
     if (u.state === 'ready') { window.kvinta.installUpdate(); return; }
     if (u.state === 'available' && window.KV_MOBILE) {
-      toast(`Скачиваю Kvinta ${u.version}… это займёт немного времени`, 3500);
-      const r = await window.kvinta.downloadUpdate(u.assetId, u.apkUrl);
-      if (r.ok) toast('Готово — подтверди установку', 4000);
-      else toast('Не удалось скачать: ' + r.error);
+      state.update = { ...u, state: 'downloading', percent: 0 };
+      refreshUpdateBox();
+      const r = await window.kvinta.downloadUpdate(u.apkUrl, (done, total) => {
+        const p = total ? Math.min(100, Math.round(done / total * 100)) : 0;
+        state.update.percent = p;
+        const f = $('#updBarFill'), t = $('#updPct');
+        if (f) f.style.width = p + '%';
+        if (t) t.textContent = p + '%';
+      });
+      if (r.ok) {
+        state.update = { ...u, state: 'ready' };
+        toast('Обновление скачано — можно устанавливать', 3000);
+      } else {
+        state.update = { ...u, state: 'available' };
+        toast('Не удалось скачать: ' + r.error);
+      }
+      refreshUpdateBox();
     }
   });
 }

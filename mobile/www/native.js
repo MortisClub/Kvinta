@@ -123,15 +123,29 @@ window.KV_MOBILE = true;
       }
     },
 
-    async downloadUpdate(assetId, directUrl) {
+    async downloadUpdate(directUrl, onProgress) {
+      let listener = null;
       try {
         if (!directUrl) throw new Error('нет ссылки на файл');
-        const r = await Http.request({
-          url: directUrl, method: 'GET', responseType: 'blob',
-          connectTimeout: 30000, readTimeout: 600000
+        if (onProgress && FS.addListener) {
+          try {
+            listener = await FS.addListener('progress', p => onProgress(p.bytes, p.contentLength));
+          } catch {}
+        }
+        await FS.downloadFile({
+          url: directUrl, path: 'update/kvinta.apk', directory: 'CACHE',
+          recursive: true, progress: true
         });
-        if (r.status < 200 || r.status >= 300) throw new Error('HTTP ' + r.status);
-        await FS.writeFile({ path: 'update/kvinta.apk', directory: 'CACHE', recursive: true, data: r.data });
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+      } finally {
+        if (listener) { try { listener.remove(); } catch {} }
+      }
+    },
+
+    async installUpdate() {
+      try {
         const u = await FS.getUri({ path: 'update/kvinta.apk', directory: 'CACHE' });
         await Cap.Plugins.ApkInstaller.install({ path: u.uri.replace(/^file:\/\//, '') });
         return { ok: true };

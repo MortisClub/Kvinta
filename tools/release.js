@@ -34,7 +34,7 @@ fs.writeFileSync(gradleFile, gradle);
 
 run('node mobile/sync.js');
 run('npx electron-builder --win --publish never');
-run('gradlew.bat assembleRelease', {
+run('.\\gradlew.bat assembleRelease', {
   cwd: path.join(ROOT, 'mobile', 'android'),
   env: { ...process.env, JAVA_HOME, PATH: path.join(JAVA_HOME, 'bin') + ';' + process.env.PATH }
 });
