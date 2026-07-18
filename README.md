@@ -1,14 +1,37 @@
-# Kvinta
+<p align="center">
+  <img src="assets/icon.png" width="128" alt="Kvinta">
+</p>
 
-Музыкальный плеер для Windows и Android. Каталог берётся из Яндекс Музыки, а всё своё — избранное, плейлисты, загрузки — хранится только на устройстве.
+<h1 align="center">Kvinta</h1>
 
-![Главная](docs/screens/desktop-home.png)
+<p align="center">
+  Локальный музыкальный сервис в фирменном красном стиле.<br>
+  Весь каталог Яндекс Музыки — слушай онлайн, сохраняй офлайн, собирай свои плейлисты.
+</p>
 
-![Настройки](docs/screens/desktop-settings.png)
+<p align="center">
+  <img src="https://img.shields.io/badge/Windows-Electron-ff1e42?style=flat-square&logo=electron&logoColor=white" alt="Electron">
+  <img src="https://img.shields.io/badge/Android-Capacitor-ff6a3d?style=flat-square&logo=android&logoColor=white" alt="Capacitor">
+  <img src="https://img.shields.io/badge/%C2%A9%20MortisClub-2026-2b161e?style=flat-square" alt="MortisClub">
+</p>
 
-<img src="docs/screens/mobile-home.png" width="270"> <img src="docs/screens/mobile-player.png" width="270">
+---
 
-Что умеет:
+## Скриншоты
+
+<p align="center">
+  <img src="docs/screens/desktop-home.png" width="820" alt="Главная — чарт и новые релизы">
+</p>
+<p align="center">
+  <img src="docs/screens/desktop-settings.png" width="820" alt="Настройки — эквалайзер и тонкая настройка звука">
+</p>
+<p align="center">
+  <img src="docs/screens/mobile-home.png" width="270" alt="Мобильная версия — главная">
+  &nbsp;&nbsp;
+  <img src="docs/screens/mobile-player.png" width="270" alt="Мобильная версия — экран «Сейчас играет»">
+</p>
+
+## Что умеет
 
 - чарт, новые релизы, поиск по трекам/артистам/альбомам, персональные подборки, история прослушиваний
 - избранное и свои плейлисты, карточки артистов
@@ -42,4 +65,4 @@ node mobile/sync.js
 - `tools/release.js` — выпуск версии: `node tools/release.js 1.0.1 "что нового"`
 - `tools/make-icons.js` — генерит иконки, `tools/shot.js` — скриншоты для ридми
 
-© MortisClub 2026
+<p align="center">© MortisClub 2026</p>
