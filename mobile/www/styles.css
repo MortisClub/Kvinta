@@ -48,7 +48,7 @@ body {
 #app {
   display: grid;
   grid-template-columns: 236px 1fr;
-  grid-template-rows: 1fr 92px;
+  grid-template-rows: 1fr auto;
   grid-template-areas: "sidebar main" "player player";
   height: 100vh;
 }
@@ -245,6 +245,17 @@ h2.row-title {
 .track-row.playing .tr-title { color: var(--accent); }
 .tr-num { color: var(--muted); font-size: 13px; text-align: center; }
 .track-row.playing .tr-num { color: var(--accent); }
+.tr-num svg { display: none; width: 14px; height: 14px; fill: var(--text); margin: 0 auto; }
+.tr-eq { display: none; gap: 2px; align-items: flex-end; justify-content: center; height: 14px; }
+.tr-eq b { width: 3px; border-radius: 1px; background: var(--accent); animation: bounce .7s ease-in-out infinite alternate; }
+.tr-eq b:nth-child(1) { height: 14px; }
+.tr-eq b:nth-child(2) { height: 9px; animation-delay: .22s; }
+.tr-eq b:nth-child(3) { height: 12px; animation-delay: .44s; }
+.track-row:hover .tr-num span, .track-row:hover .tr-eq { display: none; }
+.track-row:hover .tr-num svg { display: block; }
+.track-row.playing:not(:hover) .tr-num span { display: none; }
+.track-row.playing:not(:hover) .tr-eq { display: flex; }
+#app.paused .tr-eq b { animation-play-state: paused; }
 .tr-cover { width: 44px; height: 44px; border-radius: 8px; background: #2b161e center/cover no-repeat; }
 .tr-main { min-width: 0; }
 .tr-title { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -364,6 +375,7 @@ select.kv-select {
 
 #playerbar {
   grid-area: player;
+  height: 92px;
   background: rgba(16, 8, 11, 0.92);
   backdrop-filter: blur(18px);
   border-top: 1px solid var(--line);
@@ -384,6 +396,9 @@ select.kv-select {
 .pb-meta { min-width: 0; }
 .pb-title { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pb-artist { color: var(--muted); font-size: 12.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pb-artist.link { cursor: pointer; }
+.pb-artist.link:hover { color: var(--text); text-decoration: underline; }
+#app:not(.has-track) #playerbar { display: none; }
 
 .pb-center { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .pb-controls { display: flex; align-items: center; gap: 6px; }
@@ -424,7 +439,8 @@ select.kv-select {
 #pbSeek:hover::-webkit-slider-thumb, #pbVolume:hover::-webkit-slider-thumb { opacity: 1; }
 
 .pb-right { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
-.vol-icon { width: 18px; height: 18px; fill: var(--muted); flex: none; }
+.vol-icon { width: 18px; height: 18px; fill: var(--muted); flex: none; cursor: pointer; }
+.vol-icon:hover { fill: var(--text); }
 #pbVolume { max-width: 110px; }
 
 .like-btn.on svg { fill: var(--accent); filter: drop-shadow(0 0 6px rgba(255,30,66,.6)); }

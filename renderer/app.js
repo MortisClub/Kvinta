@@ -11,14 +11,16 @@ const store = {
   set(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
 };
 
+const DEFAULT_SETTINGS = {
+  eqOn: false, eqPreset: 'flat', eqGains: null, volume: 0.8,
+  speed: 1, fade: 0, normalize: false, mono: false, balance: 0, preamp: 0
+};
+
 const state = {
   favorites: store.get('kv.favorites', []),
   playlists: store.get('kv.playlists', []),
   downloads: store.get('kv.downloads', []),
-  settings: store.get('kv.settings', {
-    eqOn: false, eqPreset: 'flat', eqGains: null, volume: 0.8,
-    speed: 1, fade: 0, normalize: false, mono: false, balance: 0, preamp: 0
-  }),
+  settings: store.get('kv.settings', { ...DEFAULT_SETTINGS }),
   history: store.get('kv.history', []),
   sleep: { minutes: 0, until: 0, timerId: null, stopAfterTrack: false },
   update: { state: 'idle', version: null, assetId: null },
@@ -342,8 +344,10 @@ function togglePlay() {
 function updatePlayerBar() {
   const t = state.current;
   if (!t) return;
+  $('#app').classList.add('has-track');
   $('#pbTitle').textContent = t.title;
   $('#pbArtist').textContent = t.artist;
+  $('#pbArtist').classList.toggle('link', !window.KV_MOBILE && !!(t.artists && t.artists.length));
   const dl = dlById().get(t.id);
   const art = t.art480 || t.art150 || (dl && dl.cover ? fileUrl(dl.cover) : null);
   $('#pbCover').style.backgroundImage = art ? `url("${art}")` : 'none';
@@ -366,6 +370,7 @@ function updateMediaSession() {
 
 function updatePlayIcon() {
   const playing = !audio.paused && audio.src;
+  $('#app').classList.toggle('paused', !playing);
   $('#iconPlay').style.display = playing ? 'none' : '';
   $('#iconPause').style.display = playing ? '' : 'none';
   const np = $('#iconNpPlay');
@@ -449,6 +454,22 @@ $('#pbRepeat').addEventListener('click', () => {
 });
 $('#pbLike').addEventListener('click', () => state.current && toggleFav(state.current));
 $('#pbEq').addEventListener('click', () => switchView('settings'));
+$('#pbArtist').addEventListener('click', () => {
+  if (window.KV_MOBILE) return;
+  const t = state.current;
+  if (t && t.artists && t.artists.length) switchView('artist', t.artists[0].id);
+});
+
+let volBeforeMute = 0.8;
+$('.vol-icon').addEventListener('click', () => {
+  if (audio.volume > 0) { volBeforeMute = audio.volume; audio.volume = 0; }
+  else audio.volume = volBeforeMute || 0.8;
+  state.settings.volume = audio.volume;
+  saveSettings();
+  const pv = $('#pbVolume');
+  pv.value = Math.round(audio.volume * 100);
+  setRangeFill(pv, +pv.value, 100);
+});
 
 if ('mediaSession' in navigator) {
   try {
@@ -470,6 +491,17 @@ window.kvinta.onMediaKey(key => {
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
   if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  if (e.code === 'ArrowRight' && audio.duration) audio.currentTime = Math.min(audio.duration, audio.currentTime + 5);
+  if (e.code === 'ArrowLeft' && audio.duration) audio.currentTime = Math.max(0, audio.currentTime - 5);
+  if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+    e.preventDefault();
+    audio.volume = Math.min(1, Math.max(0, audio.volume + (e.code === 'ArrowUp' ? 0.05 : -0.05)));
+    state.settings.volume = audio.volume;
+    saveSettings();
+    const pv = $('#pbVolume');
+    pv.value = Math.round(audio.volume * 100);
+    setRangeFill(pv, +pv.value, 100);
+  }
 });
 
 function toggleFav(track) {
@@ -546,7 +578,11 @@ function askText(title, placeholder, initial = '') {
 
 function showTrackMenu(x, y, track, ctx) {
   const menu = $('#ctxMenu');
-  let html = '<div class="cm-head">Добавить в плейлист</div>';
+  const fav = favIds().has(track.id);
+  const downloaded = dlById().has(track.id);
+  let html = `<button data-a="fav">${fav ? 'Убрать из избранного' : 'В избранное'}</button>`;
+  html += downloaded ? '<button data-a="rmdl">Удалить загрузку</button>' : '<button data-a="dl">Скачать для офлайна</button>';
+  html += '<div class="cm-head">Добавить в плейлист</div>';
   if (!state.playlists.length) html += '<button data-a="newpl">+ Новый плейлист…</button>';
   else {
     state.playlists.forEach(p => { html += `<button data-a="pl" data-id="${p.id}">${esc(p.name)}</button>`; });
@@ -557,19 +593,20 @@ function showTrackMenu(x, y, track, ctx) {
     track.artists.slice(0, 3).forEach(a => { html += `<button data-a="artist" data-id="${a.id}">${esc(a.name)}</button>`; });
   }
   if (ctx && ctx.playlistId) html += `<div class="cm-head">Плейлист</div><button data-a="rmpl">Убрать из этого плейлиста</button>`;
-  if (ctx && ctx.downloads) html += `<div class="cm-head">Загрузки</div><button data-a="rmdl">Удалить файл</button>`;
   menu.innerHTML = html;
   menu.style.display = 'block';
   const r = menu.getBoundingClientRect();
-  menu.style.left = Math.min(x, innerWidth - r.width - 12) + 'px';
-  menu.style.top = Math.min(y, innerHeight - r.height - 12) + 'px';
+  menu.style.left = Math.max(12, Math.min(x, innerWidth - r.width - 12)) + 'px';
+  menu.style.top = Math.max(12, Math.min(y, innerHeight - r.height - 12)) + 'px';
 
   menu.onclick = async e => {
     const b = e.target.closest('button');
     if (!b) return;
     hideMenu();
     const a = b.dataset.a;
-    if (a === 'artist') switchView('artist', b.dataset.id);
+    if (a === 'fav') toggleFav(track);
+    if (a === 'dl') downloadTrack(track);
+    if (a === 'artist') { closeNpSheet(); switchView('artist', b.dataset.id); }
     if (a === 'pl') addToPlaylist(b.dataset.id, track);
     if (a === 'newpl') {
       const name = await askText('Новый плейлист', 'Название плейлиста');
@@ -597,6 +634,7 @@ function showTrackMenu(x, y, track, ctx) {
   };
 }
 function hideMenu() { $('#ctxMenu').style.display = 'none'; }
+function closeNpSheet() { $('#npSheet')?.classList.remove('open'); }
 document.addEventListener('click', e => { if (!e.target.closest('#ctxMenu')) hideMenu(); });
 
 const SLEEP_OPTS = [[0, 'Выкл'], [15, '15 мин'], [30, '30 мин'], [60, '1 час'], [90, '1,5 часа'], [-1, 'До конца трека']];
@@ -681,7 +719,7 @@ function trackListEl(tracks, ctx = {}) {
     const dl = dls.get(t.id);
     const art = t.art150 || (dl && dl.cover ? fileUrl(dl.cover) : null);
     row.innerHTML = `
-      <div class="tr-num">${i + 1}</div>
+      <div class="tr-num"><span>${i + 1}</span>${SVG.play}<i class="tr-eq"><b></b><b></b><b></b></i></div>
       <div class="tr-cover" style="${art ? `background-image:url('${art}')` : ''}"></div>
       <div class="tr-main">
         <div class="tr-title">${esc(t.title)}</div>
@@ -700,6 +738,7 @@ function trackListEl(tracks, ctx = {}) {
     $('.a-like', row).addEventListener('click', () => toggleFav(t));
     $('.a-dl', row).addEventListener('click', e => downloadTrack(t, e.currentTarget));
     $('.a-menu', row).addEventListener('click', e => {
+      e.stopPropagation();
       const r = e.currentTarget.getBoundingClientRect();
       showTrackMenu(r.left, r.bottom + 4, t, ctx);
     });
@@ -1373,6 +1412,12 @@ function renderSettings() {
     </div>
 
     <div class="settings-card">
+      <h3>Сброс настроек</h3>
+      <div class="hint">Вернёт звук, эквалайзер, скорость и громкость к значениям по умолчанию. Избранное, плейлисты и загрузки не тронет.</div>
+      <button class="btn secondary" id="setReset">Сбросить всё по умолчанию</button>
+    </div>
+
+    <div class="settings-card">
       <h3>О приложении</h3>
       <div class="hint">
         <b style="color:var(--text)">Kvinta</b> ${APP_VERSION ? 'v' + APP_VERSION : ''} — локальный музыкальный сервис.<br>
@@ -1415,6 +1460,20 @@ function renderSettings() {
     s.preamp = +e.target.value;
     $('#preVal').textContent = (s.preamp > 0 ? '+' : '') + s.preamp + ' дБ';
     saveSettings(); applyPlayback();
+  });
+  $('#setReset').addEventListener('click', () => {
+    state.settings = { ...DEFAULT_SETTINGS };
+    saveSettings();
+    audio.volume = state.settings.volume;
+    audio.playbackRate = 1;
+    const pv = $('#pbVolume');
+    pv.value = Math.round(state.settings.volume * 100);
+    setRangeFill(pv, +pv.value, 100);
+    applyEq();
+    applyPlayback();
+    applyFade();
+    renderSettings();
+    toast('Настройки сброшены', 1600);
   });
   $('#setNorm').addEventListener('change', e => { s.normalize = e.target.checked; saveSettings(); applyPlayback(); });
   $('#setMono').addEventListener('change', e => { s.mono = e.target.checked; saveSettings(); applyPlayback(); });
@@ -1492,8 +1551,8 @@ function setupMobileUi() {
     <div class="np-cover-wrap"><div class="np-cover" id="npCover"></div></div>
     <div class="np-meta">
       <div style="min-width:0">
-        <div class="np-title" id="npTitle">Kvinta</div>
-        <div class="np-artist" id="npArtist">выбери трек — и поехали</div>
+        <div class="np-title" id="npTitle"></div>
+        <div class="np-artist" id="npArtist"></div>
       </div>
       <button class="icon-btn like-btn" id="npLike">${SVG.heart}</button>
     </div>
@@ -1532,14 +1591,20 @@ function setupMobileUi() {
   $('#npShuffle').addEventListener('click', () => { $('#pbShuffle').click(); syncNp(); });
   $('#npRepeat').addEventListener('click', () => { $('#pbRepeat').click(); syncNp(); });
   $('#npEq').addEventListener('click', () => { closeNp(); switchView('settings'); });
+  $('#npArtist').addEventListener('click', () => {
+    const t = state.current;
+    if (t && t.artists && t.artists.length) { closeNp(); switchView('artist', t.artists[0].id); }
+  });
   $('#npSleep').addEventListener('click', e => {
+    e.stopPropagation();
     const r = e.currentTarget.getBoundingClientRect();
     showSleepMenu(r.left, r.top - 240);
   });
   $('#npMore').addEventListener('click', e => {
     if (!state.current) return;
+    e.stopPropagation();
     const r = e.currentTarget.getBoundingClientRect();
-    showTrackMenu(r.left - 160, r.bottom + 4, state.current, {});
+    showTrackMenu(r.left - 200, r.bottom + 4, state.current, {});
   });
   $('#npSeek').addEventListener('input', e => {
     if (audio.duration) {

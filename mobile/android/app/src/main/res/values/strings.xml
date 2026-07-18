@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Kvinta</string>
-    <string name="title_activity_main">Kvinta</string>
-    <string name="package_name">com.mortisclub.kvinta</string>
-    <string name="custom_url_scheme">com.mortisclub.kvinta</string>
-</resources>
