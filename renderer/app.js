@@ -349,8 +349,14 @@ function updatePlayerBar() {
   if (!t) return;
   $('#app').classList.add('has-track');
   $('#pbTitle').textContent = t.title;
-  $('#pbArtist').textContent = t.artist;
-  $('#pbArtist').classList.toggle('link', !window.KV_MOBILE && !!t.artist);
+  const pa = $('#pbArtist');
+  if (!window.KV_MOBILE && t.artists && t.artists.length) {
+    pa.innerHTML = t.artists.map(a => `<span class="link" data-aid="${a.id}">${esc(a.name)}</span>`).join(', ');
+    pa.classList.remove('link');
+  } else {
+    pa.textContent = t.artist;
+    pa.classList.toggle('link', !window.KV_MOBILE && !!t.artist);
+  }
   const dl = dlById().get(t.id);
   const art = t.art480 || t.art150 || (dl && dl.cover ? fileUrl(dl.cover) : null);
   $('#pbCover').style.backgroundImage = art ? `url("${art}")` : 'none';
@@ -475,9 +481,12 @@ async function openArtistFromTrack(t) {
   }
 }
 
-$('#pbArtist').addEventListener('click', () => {
+$('#pbArtist').addEventListener('click', e => {
   if (window.KV_MOBILE) return;
-  openArtistFromTrack(state.current);
+  const t = state.current;
+  if (!t) return;
+  if (t.artists && t.artists.length) openArtists(e, t.artists, e.target.closest('[data-aid]')?.dataset.aid);
+  else openArtistFromTrack(t);
 });
 
 let volBeforeMute = 0.8;
@@ -657,6 +666,29 @@ function showTrackMenu(x, y, track, ctx) {
 }
 function hideMenu() { $('#ctxMenu').style.display = 'none'; }
 function closeNpSheet() { $('#npSheet')?.classList.remove('open'); }
+
+function showArtistMenu(x, y, artists) {
+  const menu = $('#ctxMenu');
+  menu.innerHTML = '<div class="cm-head">Артисты</div>' +
+    artists.map(a => `<button data-id="${a.id}">${esc(a.name)}</button>`).join('');
+  menu.style.display = 'block';
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.max(12, Math.min(x, innerWidth - r.width - 12)) + 'px';
+  menu.style.top = Math.max(12, Math.min(y, innerHeight - r.height - 12)) + 'px';
+  menu.onclick = e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    hideMenu();
+    closeNpSheet();
+    switchView('artist', b.dataset.id);
+  };
+}
+
+function openArtists(e, artists, fallbackId) {
+  e.stopPropagation();
+  if (artists.length > 1) showArtistMenu(e.clientX, e.clientY, artists);
+  else switchView('artist', fallbackId || artists[0].id);
+}
 document.addEventListener('click', e => { if (!e.target.closest('#ctxMenu')) hideMenu(); });
 
 const SLEEP_OPTS = [[0, 'Выкл'], [15, '15 мин'], [30, '30 мин'], [60, '1 час'], [90, '1,5 часа'], [-1, 'До конца трека']];
@@ -729,6 +761,13 @@ const SVG = {
   note: '<svg viewBox="0 0 24 24"><path d="M12 3v10.3a4 4 0 1 0 2 3.5V7h6V3z"/></svg>'
 };
 
+function artistLinksHtml(t) {
+  if (t.artists && t.artists.length) {
+    return t.artists.map(a => `<span class="tr-artist-name link" data-aid="${a.id}">${esc(a.name)}</span>`).join(', ');
+  }
+  return `<span class="tr-artist-name">${esc(t.artist)}</span>`;
+}
+
 function trackListEl(tracks, ctx = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'tracklist';
@@ -745,7 +784,7 @@ function trackListEl(tracks, ctx = {}) {
       <div class="tr-cover" style="${art ? `background-image:url('${art}')` : ''}"></div>
       <div class="tr-main">
         <div class="tr-title">${esc(t.title)}</div>
-        <div class="tr-artist"><span class="tr-artist-name">${esc(t.artist)}</span>${t.album ? ' · ' + esc(t.album) : (t.genre ? ' · ' + esc(t.genre) : '')}</div>
+        <div class="tr-artist">${artistLinksHtml(t)}${t.album ? ' · ' + esc(t.album) : (t.genre ? ' · ' + esc(t.genre) : '')}</div>
       </div>
       <div class="tr-dur">${fmtTime(t.duration)}</div>
       <div class="tr-actions">
@@ -765,11 +804,9 @@ function trackListEl(tracks, ctx = {}) {
       showTrackMenu(r.left, r.bottom + 4, t, ctx);
     });
     row.addEventListener('contextmenu', e => { e.preventDefault(); showTrackMenu(e.clientX, e.clientY, t, ctx); });
-    if (t.artists && t.artists.length) {
-      const an = $('.tr-artist-name', row);
-      an.classList.add('link');
-      an.addEventListener('click', e => { e.stopPropagation(); switchView('artist', t.artists[0].id); });
-    }
+    $$('.tr-artist-name.link', row).forEach(an => {
+      an.addEventListener('click', e => openArtists(e, t.artists, an.dataset.aid));
+    });
     wrap.appendChild(row);
   });
   return wrap;
@@ -1672,10 +1709,11 @@ function setupMobileUi() {
   $('#npShuffle').addEventListener('click', () => { $('#pbShuffle').click(); syncNp(); });
   $('#npRepeat').addEventListener('click', () => { $('#pbRepeat').click(); syncNp(); });
   $('#npEq').addEventListener('click', () => { closeNp(); switchView('settings'); });
-  $('#npArtist').addEventListener('click', () => {
-    if (!state.current) return;
-    closeNp();
-    openArtistFromTrack(state.current);
+  $('#npArtist').addEventListener('click', e => {
+    const t = state.current;
+    if (!t) return;
+    if (t.artists && t.artists.length) { openArtists(e, t.artists); if (t.artists.length === 1) closeNp(); }
+    else { closeNp(); openArtistFromTrack(t); }
   });
   $('#npSleep').addEventListener('click', e => {
     e.stopPropagation();

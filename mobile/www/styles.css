@@ -413,8 +413,8 @@ select.kv-select {
 .pb-meta { min-width: 0; }
 .pb-title { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pb-artist { color: var(--muted); font-size: 12.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pb-artist.link { cursor: pointer; }
-.pb-artist.link:hover { color: var(--text); text-decoration: underline; }
+.pb-artist.link, .pb-artist .link { cursor: pointer; }
+.pb-artist.link:hover, .pb-artist .link:hover { color: var(--text); text-decoration: underline; }
 #app:not(.has-track) #playerbar { display: none; }
 
 .pb-center { display: flex; flex-direction: column; align-items: center; gap: 4px; }
