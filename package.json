@@ -1,7 +1,7 @@
 {
   "name": "kvinta",
   "productName": "Kvinta",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Локальный музыкальный сервис — вся твоя музыка офлайн",
   "main": "main.js",
   "scripts": {
