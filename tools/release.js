@@ -33,6 +33,7 @@ gradle = gradle
 fs.writeFileSync(gradleFile, gradle);
 
 run('node mobile/sync.js');
+run('npx cap copy android', { cwd: path.join(ROOT, 'mobile') });
 run('npx electron-builder --win --publish never');
 run('.\\gradlew.bat assembleRelease', {
   cwd: path.join(ROOT, 'mobile', 'android'),
