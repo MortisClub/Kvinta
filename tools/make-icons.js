@@ -1,7 +1,3 @@
-/* Генератор иконок Kvinta: рисует логотип (полосы-эквалайзер) во все размеры
-   Android (mipmap + adaptive foreground) и Electron (assets/icon.png + .ico).
-   Без зависимостей: растеризация и кодирование PNG/ICO — свои.
-   Запуск: node tools/make-icons.js */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -11,7 +7,6 @@ const ROOT = path.join(__dirname, '..');
 const RES = path.join(ROOT, 'mobile', 'android', 'app', 'src', 'main', 'res');
 const ASSETS = path.join(ROOT, 'assets');
 
-// ---------- геометрия логотипа (как в .logo-mark, viewBox 0 0 44 44) ----------
 const BARS = [
   { x: 3,  y: 16, w: 5, h: 12, r: 2.5 },
   { x: 12, y: 9,  w: 5, h: 26, r: 2.5 },
@@ -19,15 +14,14 @@ const BARS = [
   { x: 30, y: 11, w: 5, h: 22, r: 2.5 },
   { x: 39, y: 18, w: 2, h: 8,  r: 1 }
 ];
-const C1 = [255, 30, 66];    // #ff1e42
-const C2 = [255, 106, 61];   // #ff6a3d
-const BG = [13, 7, 9];       // #0d0709
-const GLOW_BG = [58, 13, 24]; // #3a0d18 — бордовое свечение фона
+const C1 = [255, 30, 66];
+const C2 = [255, 106, 61];
+const BG = [13, 7, 9];
+const GLOW_BG = [58, 13, 24];
 
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const lerp = (a, b, t) => a + (b - a) * t;
 
-// расстояние до скруглённого прямоугольника (<0 — внутри)
 function rrectDist(px, py, rc) {
   const cx = rc.x + rc.w / 2, cy = rc.y + rc.h / 2;
   const qx = Math.abs(px - cx) - (rc.w / 2 - rc.r);
@@ -36,11 +30,6 @@ function rrectDist(px, py, rc) {
   return Math.min(Math.max(qx, qy), 0) + Math.hypot(ax, ay) - rc.r;
 }
 
-/* Рендер квадрата size×size с 4× суперсэмплингом.
-   mode: 'legacy' — фон + маска-скруглённый квадрат;
-         'round'  — фон + круглая маска;
-         'square' — фон без маски (Play Store / .ico);
-         'fg'     — прозрачный фон, только полосы со свечением (adaptive foreground) */
 function render(size, mode) {
   const SS = 4, N = size * SS;
   const out = new Uint8Array(size * size * 4);
@@ -52,7 +41,7 @@ function render(size, mode) {
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      let R = 0, G = 0, B = 0, A = 0; // premultiplied-сумма сабпикселей
+      let R = 0, G = 0, B = 0, A = 0;
       for (let sy = 0; sy < SS; sy++) {
         for (let sx = 0; sx < SS; sx++) {
           const u = x * SS + sx + 0.5, v = y * SS + sy + 0.5;
@@ -61,7 +50,6 @@ function render(size, mode) {
 
           let r = 0, g = 0, b = 0, a = 0;
           if (mode !== 'fg') {
-            // фон: тёмная база + бордовое свечение сверху-справа + красная дымка за полосами
             const d1 = Math.hypot(nx - 0.75, ny - 0.18) / 0.85;
             const f1 = Math.pow(clamp(1 - d1, 0, 1), 1.5);
             r = lerp(BG[0], GLOW_BG[0], f1);
@@ -74,13 +62,11 @@ function render(size, mode) {
             b = clamp(b + C1[2] * f2 * 0.10, 0, 255);
             a = 1;
           } else {
-            // adaptive foreground: лёгкое свечение за полосами на прозрачном
             const d2 = Math.hypot(nx - 0.5, ny - 0.5) / 0.34;
             const ga = 0.28 * Math.pow(clamp(1 - d2, 0, 1), 2);
             r = C1[0]; g = C1[1]; b = C1[2]; a = ga;
           }
 
-          // полосы с диагональным градиентом
           let inBar = false;
           for (const rc of BARS) {
             if (rrectDist(lu, lv, rc) <= 0) { inBar = true; break; }
@@ -93,7 +79,6 @@ function render(size, mode) {
             a = 1;
           }
 
-          // маска формы (для fg не нужна)
           if (mode !== 'fg') {
             const rrc = { x: 0, y: 0, w: N, h: N, r: maskR };
             const md = mode === 'round'
@@ -116,7 +101,6 @@ function render(size, mode) {
   return out;
 }
 
-// ---------- PNG ----------
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -143,7 +127,7 @@ function encodePng(size, rgba) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(size, 0);
   ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8; ihdr[9] = 6; // 8 бит, RGBA
+  ihdr[8] = 8; ihdr[9] = 6;
   const raw = Buffer.alloc(size * (size * 4 + 1));
   for (let y = 0; y < size; y++) {
     raw[y * (size * 4 + 1)] = 0;
@@ -159,10 +143,9 @@ function encodePng(size, rgba) {
 function writePng(file, size, mode) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, encodePng(size, render(size, mode)));
-  console.log('✓', path.relative(ROOT, file), size + 'px');
+  console.log(path.relative(ROOT, file), size + 'px');
 }
 
-// ---------- ICO (PNG-вложения, Vista+) ----------
 function writeIco(file, sizes, mode) {
   const pngs = sizes.map(s => encodePng(s, render(s, mode)));
   const head = Buffer.alloc(6 + sizes.length * 16);
@@ -180,10 +163,9 @@ function writeIco(file, sizes, mode) {
     off += pngs[i].length;
   });
   fs.writeFileSync(file, Buffer.concat([head, ...pngs]));
-  console.log('✓', path.relative(ROOT, file), sizes.join('/'));
+  console.log(path.relative(ROOT, file), sizes.join('/'));
 }
 
-// ---------- BMP для боковой панели инсталлятора (NSIS, 164×314, 24-бит) ----------
 function renderSidebar(W, H) {
   const SS = 3, NW = W * SS, NH = H * SS;
   const out = new Uint8Array(W * H * 3);
@@ -243,19 +225,18 @@ function writeBmp(file, W, H) {
   buf.writeUInt16LE(24, 28);
   buf.writeUInt32LE(dataSize, 34);
   for (let y = 0; y < H; y++) {
-    const row = 54 + (H - 1 - y) * rowSize; // строки снизу вверх
+    const row = 54 + (H - 1 - y) * rowSize;
     for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 3;
-      buf[row + x * 3] = rgb[i + 2];     // BGR
+      buf[row + x * 3] = rgb[i + 2];
       buf[row + x * 3 + 1] = rgb[i + 1];
       buf[row + x * 3 + 2] = rgb[i];
     }
   }
   fs.writeFileSync(file, buf);
-  console.log('✓', path.relative(ROOT, file), W + 'x' + H);
+  console.log(path.relative(ROOT, file), W + 'x' + H);
 }
 
-// ---------- выхлоп ----------
 const DENSITIES = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
 for (const [d, k] of Object.entries(DENSITIES)) {
   const dir = path.join(RES, 'mipmap-' + d);

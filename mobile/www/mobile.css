@@ -1,4 +1,3 @@
-/* ============ Kvinta — мобильная раскладка (Capacitor) ============ */
 
 .desktop-only { display: none !important; }
 .settings-row.mobile-only { display: flex !important; }
@@ -26,7 +25,6 @@ h2.row-title { font-size: 17px; margin: 20px 0 10px; }
 .card { padding: 9px; }
 .card-play { opacity: 1; transform: none; right: 14px; bottom: 56px; width: 36px; height: 36px; }
 
-/* Список треков: без номера и длительности, кнопки видимы всегда (тач) */
 .tl-head { display: none; }
 .track-row { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; padding: 6px 4px; }
 .tr-num, .tr-dur { display: none; }
@@ -34,7 +32,6 @@ h2.row-title { font-size: 17px; margin: 20px 0 10px; }
 .tr-actions { gap: 0; }
 .tr-actions .icon-btn { opacity: 1; width: 32px; height: 32px; }
 
-/* ===== Мини-плеер: одна строка, тап открывает «Сейчас играет» ===== */
 #playerbar {
   display: flex;
   align-items: center;
@@ -57,7 +54,6 @@ h2.row-title { font-size: 17px; margin: 20px 0 10px; }
 #pbSeek { height: 3px; border-radius: 0; }
 .pb-right { display: none; }
 
-/* ===== Нижняя навигация ===== */
 #tabbar {
   grid-area: tabbar;
   display: flex;
@@ -79,7 +75,6 @@ h2.row-title { font-size: 17px; margin: 20px 0 10px; }
   white-space: nowrap; overflow: hidden; max-width: 100%;
 }
 
-/* ===== Полноэкранный «Сейчас играет» ===== */
 #npSheet {
   position: fixed; inset: 0; z-index: 350;
   background: var(--bg-grad);
@@ -147,7 +142,6 @@ h2.row-title { font-size: 17px; margin: 20px 0 10px; }
 .np-extra .chip { padding: 9px 18px; }
 .np-extra .chip.active { background: var(--accent-grad); color: #fff; border-color: transparent; }
 
-/* ===== Плейлисты / настройки ===== */
 .pl-detail-head { flex-direction: column; align-items: flex-start; gap: 14px; }
 .pl-detail-head h1 { font-size: 28px; }
 .pl-detail-cover { width: 140px; height: 140px; }
@@ -157,7 +151,6 @@ h2.row-title { font-size: 17px; margin: 20px 0 10px; }
 .eq-bands { gap: 3px; }
 .eq-band input[type=range] { width: 30px; height: 132px; }
 
-/* ===== Меню и тосты поверх «Сейчас играет» ===== */
 .ctx-menu { z-index: 400; }
 #toasts {
   left: 12px; right: 12px;

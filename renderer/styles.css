@@ -1,6 +1,4 @@
-/* ============ Kvinta — красная тема ============ */
 
-/* Локальные шрифты (скачаны с Google Fonts, лежат в приложении) */
 @font-face { font-family: 'Inter'; font-weight: 400; font-display: swap;
   src: url('fonts/inter-400-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F; }
 @font-face { font-family: 'Inter'; font-weight: 400; font-display: swap;
@@ -55,7 +53,6 @@ body {
   height: 100vh;
 }
 
-/* ============ Сайдбар ============ */
 #sidebar {
   grid-area: sidebar;
   background: var(--panel);
@@ -124,7 +121,6 @@ body {
   font-size: 11px; line-height: 1.6; border-top: 1px solid var(--line);
 }
 
-/* ============ Основная область ============ */
 #main {
   grid-area: main;
   background: var(--bg-grad);
@@ -143,7 +139,6 @@ h2.row-title {
 }
 .row-sub { color: var(--muted); font-size: 13px; margin-top: -10px; margin-bottom: 14px; }
 
-/* Хиро-баннер */
 .hero {
   position: relative;
   border-radius: 20px;
@@ -184,7 +179,6 @@ h2.row-title {
 .btn.danger { background: transparent; border: 1px solid rgba(255,30,66,.5); color: #ff5c72; box-shadow: none; }
 .btn svg { width: 16px; height: 16px; fill: currentColor; }
 
-/* Карусель карточек */
 .card-row {
   display: grid;
   grid-auto-flow: column;
@@ -228,13 +222,11 @@ h2.row-title {
 .card-play svg { width: 18px; height: 18px; fill: #fff; }
 .card:hover .card-play { opacity: 1; transform: translateY(0); }
 
-/* Плейлист-карточки с градиентом вместо обложки */
 .pl-cover-gen {
   display: flex; align-items: center; justify-content: center;
   font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 40px; color: rgba(255,255,255,.85);
 }
 
-/* ============ Список треков ============ */
 .tracklist { margin-top: 6px; }
 .tl-head, .track-row {
   display: grid;
@@ -290,7 +282,6 @@ h2.row-title {
 .loader i:nth-child(4) { animation-delay: .36s; }
 .loader i:nth-child(5) { animation-delay: .48s; }
 
-/* ============ Поиск ============ */
 .search-box {
   display: flex; align-items: center; gap: 12px;
   background: var(--card); border: 1px solid var(--line);
@@ -305,7 +296,6 @@ h2.row-title {
 }
 .search-box input::placeholder { color: #7a656c; }
 
-/* ============ Плейлисты ============ */
 .pl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 18px; }
 .pl-detail-head { display: flex; gap: 24px; align-items: flex-end; margin-bottom: 24px; }
 .pl-detail-cover {
@@ -317,7 +307,6 @@ h2.row-title {
 .pl-detail-head .stats { color: var(--muted); font-size: 13.5px; margin-bottom: 14px; }
 .pl-actions { display: flex; gap: 10px; }
 
-/* ============ Настройки / Эквалайзер ============ */
 .settings-card {
   background: var(--card); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 22px 24px; margin-bottom: 18px;
@@ -373,7 +362,6 @@ select.kv-select {
   padding: 8px 12px; font: 400 13px 'Inter', sans-serif; outline: none; cursor: pointer;
 }
 
-/* ============ Нижний плеер ============ */
 #playerbar {
   grid-area: player;
   background: rgba(16, 8, 11, 0.92);
@@ -441,7 +429,6 @@ select.kv-select {
 
 .like-btn.on svg { fill: var(--accent); filter: drop-shadow(0 0 6px rgba(255,30,66,.6)); }
 
-/* ============ Контекстное меню ============ */
 .ctx-menu {
   position: fixed; z-index: 200;
   background: #241219; border: 1px solid rgba(255,255,255,.1);
@@ -459,7 +446,6 @@ select.kv-select {
 }
 .ctx-menu button:hover { background: rgba(255,30,66,.18); }
 
-/* ============ Тосты ============ */
 #toasts {
   position: fixed; bottom: 108px; right: 24px; z-index: 300;
   display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
@@ -475,8 +461,12 @@ select.kv-select {
 @keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 .toast.out { opacity: 0; transition: opacity .3s; }
 
-/* ============ Скроллбары ============ */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 6px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,30,66,.45); }
 ::-webkit-scrollbar-track { background: transparent; }
+
+.card-cover.round { border-radius: 50%; }
+.pl-detail-cover.round { border-radius: 50%; }
+.tr-artist-name.link { cursor: pointer; }
+.tr-artist-name.link:hover { color: var(--text); text-decoration: underline; }

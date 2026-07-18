@@ -1,78 +1,45 @@
-<p align="center">
-  <img src="assets/icon.png" width="128" alt="Kvinta">
-</p>
+# Kvinta
 
-<h1 align="center">Kvinta</h1>
+Музыкальный плеер для Windows и Android. Каталог берётся из Яндекс Музыки, а всё своё — избранное, плейлисты, загрузки — хранится только на устройстве.
 
-<p align="center">
-  Локальный музыкальный сервис в фирменном красном стиле.<br>
-  Весь каталог Яндекс Музыки — слушай онлайн, сохраняй офлайн, собирай свои плейлисты.
-</p>
+![Главная](docs/screens/desktop-home.png)
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Windows-Electron-ff1e42?style=flat-square&logo=electron&logoColor=white" alt="Electron">
-  <img src="https://img.shields.io/badge/Android-Capacitor-ff6a3d?style=flat-square&logo=android&logoColor=white" alt="Capacitor">
-  <img src="https://img.shields.io/badge/%C2%A9%20MortisClub-2026-2b161e?style=flat-square" alt="MortisClub">
-</p>
+![Настройки](docs/screens/desktop-settings.png)
 
----
+<img src="docs/screens/mobile-home.png" width="270"> <img src="docs/screens/mobile-player.png" width="270">
 
-## Скриншоты
+Что умеет:
 
-<p align="center">
-  <img src="docs/screens/desktop-home.png" width="820" alt="Главная — чарт и новые релизы">
-</p>
-<p align="center">
-  <img src="docs/screens/desktop-settings.png" width="820" alt="Настройки — эквалайзер и тонкая настройка звука">
-</p>
-<p align="center">
-  <img src="docs/screens/mobile-home.png" width="270" alt="Мобильная версия — главная">
-  &nbsp;&nbsp;
-  <img src="docs/screens/mobile-player.png" width="270" alt="Мобильная версия — экран «Сейчас играет»">
-</p>
-
-## Возможности
-
-- 🔥 **Каталог** — чарт, новые релизы, поиск, персональные подборки «Для тебя», история «Ты недавно слушал»
-- ❤ **Своя библиотека** — избранное и плейлисты, всё хранится только на твоём устройстве
-- ⬇ **Офлайн** — загрузка треков (на ПК — в папку `Музыка\Kvinta`)
-- 🎚 **Звук** — 10-полосный эквалайзер с пресетами, скорость, баланс, моно, нормализация громкости, preamp, плавные переходы между треками
-- 🌙 **Таймер сна** — 15/30/60/90 минут или «до конца трека»
-- 🎧 **Управление отовсюду** — медиаклавиши клавиатуры, шторка и экран блокировки Android (Media Session)
-- 🔄 **Автообновление** — ПК сам скачивает и ставит новые версии из релизов, Android предлагает установить свежий APK
+- чарт, новые релизы, поиск по трекам/артистам/альбомам, персональные подборки, история прослушиваний
+- избранное и свои плейлисты, карточки артистов
+- загрузка треков для офлайна (на ПК — в папку `Музыка\Kvinta`)
+- 10-полосный эквалайзер с пресетами, скорость, баланс, моно, нормализация, preamp, плавные переходы
+- таймер сна
+- медиаклавиши, шторка и экран блокировки на Android
+- автообновление: ПК ставит новые версии сам, Android предлагает свежий APK
 
 ## Запуск на ПК
 
-Дважды кликни **`Kvinta.bat`** — при первом запуске сам поставит зависимости.
+Двойной клик по `Kvinta.bat` — при первом запуске сам поставит зависимости.
 
 ## Мобильная версия
 
-Capacitor-обёртка над тем же кодом (папка `mobile/`):
+В `mobile/` лежит Capacitor-обёртка над тем же кодом:
 
-```bash
-node mobile/sync.js        # синхронизировать общий код в mobile/www
+```
+node mobile/sync.js
 ```
 
-Дальше открыть `mobile/android` в **Android Studio** и собрать APK.
+после этого открыть `mobile/android` в Android Studio и собрать APK.
 
-Особенности мобильной версии:
+На телефоне трек с включённой обработкой звука сначала качается целиком и играет из blob, иначе Web Audio глушит кросс-доменный поток. Поэтому старт с эквалайзером чуть дольше.
 
-- Нижняя таб-навигация, компактный мини-плеер, полноэкранный «Сейчас играет» (тап по мини-плееру, свайп вниз — закрыть)
-- Полные настройки звука: трек с обработкой загружается нативно (мимо CORS) и играет из blob — эквалайзер работает как на ПК
-- Громкость и таймер сна в настройках, управление из шторки и с экрана блокировки
+## Как устроено
 
-## Структура проекта
+- `main.js`, `preload.js` — Electron: окно, IPC, прокси `kvs://` для Web Audio, загрузки
+- `renderer/` — весь интерфейс, правится тут
+- `mobile/www/` — копия renderer плюс `native.js` (мост на Capacitor) и `mobile.css`
+- `tools/release.js` — выпуск версии: `node tools/release.js 1.0.1 "что нового"`
+- `tools/make-icons.js` — генерит иконки, `tools/shot.js` — скриншоты для ридми
 
-| Путь | Что это |
-|---|---|
-| `main.js`, `preload.js` | Electron: окно, IPC, прокси `kvs://` для Web Audio, загрузки |
-| `renderer/` | Общий интерфейс (UI, плеер, эквалайзер) — правится здесь |
-| `mobile/www/` | Копия renderer + `native.js` (Capacitor-мост) и `mobile.css` |
-| `mobile/sync.js` | Синхронизация renderer → www перед сборкой APK |
-| `tools/make-icons.js` | Генератор всех иконок (Android mipmap, `.ico`, Play Store) |
-| `tools/shot.js` | Автоскриншоты для README (`npx electron tools/shot.js`) |
-| `tools/release.js` | Выпуск версии: `node tools/release.js 1.0.1 "что нового"` — бамп версий, сборка Setup + APK, релиз на GitHub |
-
----
-
-<p align="center">© MortisClub 2026</p>
+© MortisClub 2026

@@ -1,5 +1,3 @@
-/* Выпуск версии: node tools/release.js 1.0.1 "что нового"
-   Бампит версии, собирает Setup.exe и APK, коммитит и создаёт релиз на GitHub. */
 'use strict';
 const { execSync } = require('child_process');
 const fs = require('fs');
@@ -16,13 +14,11 @@ if (!/^\d+\.\d+\.\d+$/.test(version || '')) {
 
 const run = (cmd, opts = {}) => execSync(cmd, { stdio: 'inherit', cwd: ROOT, ...opts });
 
-// JDK для gradle (портативный Temurin в ~/.jdks)
 const jdks = path.join(process.env.USERPROFILE, '.jdks');
 const jdkDir = fs.existsSync(jdks) ? fs.readdirSync(jdks).find(d => d.startsWith('jdk')) : null;
 if (!jdkDir) { console.error('Не найден JDK в ' + jdks); process.exit(1); }
 const JAVA_HOME = path.join(jdks, jdkDir);
 
-// --- версии ---
 const pkgFile = path.join(ROOT, 'package.json');
 const pkg = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
 pkg.version = version;
@@ -36,7 +32,6 @@ gradle = gradle
   .replace(/versionName "[^"]*"/, `versionName "${version}"`);
 fs.writeFileSync(gradleFile, gradle);
 
-// --- сборка ---
 run('node mobile/sync.js');
 run('npx electron-builder --win --publish never');
 run('gradlew.bat assembleRelease', {
@@ -48,7 +43,6 @@ const apkSrc = path.join(ROOT, 'mobile', 'android', 'app', 'build', 'outputs', '
 const apkDst = path.join(ROOT, 'dist', `Kvinta-${version}.apk`);
 fs.copyFileSync(apkSrc, apkDst);
 
-// --- коммит и релиз ---
 run(`git add -A && git commit -m "v${version}"`);
 run('git push');
 const assets = [

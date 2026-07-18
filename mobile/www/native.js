@@ -1,4 +1,3 @@
-/* Нативная прослойка мобильной Kvinta — реализует window.kvinta вместо Electron IPC */
 'use strict';
 window.KV_MOBILE = true;
 
@@ -23,7 +22,6 @@ window.KV_MOBILE = true;
     return (await res.json()).result;
   }
 
-  // Прямая ссылка на mp3-поток (та же схема подписи, что в десктопной версии)
   async function ymStreamUrl(trackId) {
     const infos = await ymFetch('/tracks/' + trackId + '/download-info');
     const mp3 = (infos || [])
@@ -44,7 +42,6 @@ window.KV_MOBILE = true;
     return String(s).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 120).trim();
   }
 
-  // Скачивает бинарник нативно (мимо CORS) и возвращает base64
   async function fetchB64(url, timeout) {
     const r = await Http.request({
       url, method: 'GET', responseType: 'blob',
@@ -65,8 +62,6 @@ window.KV_MOBILE = true;
       catch (e) { return { ok: false, error: String(e.message || e) }; }
     },
 
-    // Качает поток нативно и отдаёт blob: URL — same-origin источник,
-    // на котором работает Web Audio (эквалайзер, баланс, моно и т.д.)
     async fetchStreamBlobUrl(url) {
       try {
         const b64 = await fetchB64(url);
@@ -105,16 +100,11 @@ window.KV_MOBILE = true;
       }
     },
 
-    // Проверка обновлений: последний релиз в репозитории против текущей версии
     async checkUpdate() {
       try {
         const gh = window.KV_GH || {};
         const api = `https://api.github.com/repos/${gh.owner}/${gh.repo}/releases/latest`;
-        let res = gh.token
-          ? await fetch(api, { headers: { 'Authorization': 'Bearer ' + gh.token, 'Accept': 'application/vnd.github+json' } })
-          : await fetch(api, { headers: { 'Accept': 'application/vnd.github+json' } });
-        // токен мог протухнуть — для публичного репозитория он и не нужен
-        if (!res.ok && gh.token) res = await fetch(api, { headers: { 'Accept': 'application/vnd.github+json' } });
+        const res = await fetch(api, { headers: { 'Accept': 'application/vnd.github+json' } });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const rel = await res.json();
         const version = String(rel.tag_name || '').replace(/^v/, '');
@@ -133,54 +123,15 @@ window.KV_MOBILE = true;
       }
     },
 
-    // Качает APK релиза и открывает системный установщик
     async downloadUpdate(assetId, directUrl) {
       try {
-        const gh = window.KV_GH || {};
-        const assetUrl = `https://api.github.com/repos/${gh.owner}/${gh.repo}/releases/assets/${assetId}`;
-        const auth = { 'Authorization': 'Bearer ' + gh.token, 'Accept': 'application/octet-stream' };
-        let apkB64 = null;
-        if (gh.token) {
-          try {
-            // GitHub отвечает редиректом на S3, куда нельзя пересылать Authorization —
-            // поэтому редирект разбираем вручную
-            let r = await Http.request({
-              url: assetUrl, method: 'GET', headers: auth,
-              disableRedirects: true, connectTimeout: 30000, readTimeout: 30000
-            });
-            if (r.status >= 300 && r.status < 400) {
-              const loc = r.headers.Location || r.headers.location;
-              if (!loc) throw new Error('редирект без Location');
-              const r2 = await Http.request({
-                url: loc, method: 'GET', responseType: 'blob',
-                connectTimeout: 30000, readTimeout: 600000
-              });
-              if (r2.status < 200 || r2.status >= 300) throw new Error('HTTP ' + r2.status);
-              apkB64 = r2.data;
-            } else if (r.status >= 200 && r.status < 300) {
-              r = await Http.request({
-                url: assetUrl, method: 'GET', headers: auth, responseType: 'blob',
-                connectTimeout: 30000, readTimeout: 600000
-              });
-              apkB64 = r.data;
-            } else {
-              throw new Error('HTTP ' + r.status);
-            }
-          } catch (e) {
-            if (!directUrl) throw e;
-          }
-        }
-        if (!apkB64) {
-          // публичный релиз качается по прямой ссылке без токена
-          if (!directUrl) throw new Error('нет ссылки на файл');
-          const r = await Http.request({
-            url: directUrl, method: 'GET', responseType: 'blob',
-            connectTimeout: 30000, readTimeout: 600000
-          });
-          if (r.status < 200 || r.status >= 300) throw new Error('HTTP ' + r.status);
-          apkB64 = r.data;
-        }
-        await FS.writeFile({ path: 'update/kvinta.apk', directory: 'CACHE', recursive: true, data: apkB64 });
+        if (!directUrl) throw new Error('нет ссылки на файл');
+        const r = await Http.request({
+          url: directUrl, method: 'GET', responseType: 'blob',
+          connectTimeout: 30000, readTimeout: 600000
+        });
+        if (r.status < 200 || r.status >= 300) throw new Error('HTTP ' + r.status);
+        await FS.writeFile({ path: 'update/kvinta.apk', directory: 'CACHE', recursive: true, data: r.data });
         const u = await FS.getUri({ path: 'update/kvinta.apk', directory: 'CACHE' });
         await Cap.Plugins.ApkInstaller.install({ path: u.uri.replace(/^file:\/\//, '') });
         return { ok: true };

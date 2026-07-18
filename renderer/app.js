@@ -1,10 +1,8 @@
-/* ============ Kvinta — логика приложения ============ */
 'use strict';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 
-// ---------- Хранилище (localStorage) ----------
 const store = {
   get(key, def) {
     try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; }
@@ -14,26 +12,27 @@ const store = {
 };
 
 const state = {
-  favorites: store.get('kv.favorites', []),        // [track]
-  playlists: store.get('kv.playlists', []),        // [{id,name,tracks:[track]}]
-  downloads: store.get('kv.downloads', []),        // [track + {path, cover}]
+  favorites: store.get('kv.favorites', []),
+  playlists: store.get('kv.playlists', []),
+  downloads: store.get('kv.downloads', []),
   settings: store.get('kv.settings', {
     eqOn: false, eqPreset: 'flat', eqGains: null, volume: 0.8,
     speed: 1, fade: 0, normalize: false, mono: false, balance: 0, preamp: 0
   }),
-  history: store.get('kv.history', []),             // недавно прослушанные
+  history: store.get('kv.history', []),
   sleep: { minutes: 0, until: 0, timerId: null, stopAfterTrack: false },
   update: { state: 'idle', version: null, assetId: null },
   queue: [],
   queueName: '',
-  order: [],          // порядок воспроизведения (индексы queue)
+  order: [],
   orderPos: -1,
   shuffle: false,
-  repeat: 'off',      // off | all | one
-  current: null,      // текущий трек
+  repeat: 'off',
+  current: null,
   view: 'new',
   viewParam: null,
-  cache: {}           // кэш ответов API на сессию
+  searchQuery: '',
+  cache: {}
 };
 
 const favIds = () => new Set(state.favorites.map(t => t.id));
@@ -45,7 +44,6 @@ function saveDls() { store.set('kv.downloads', state.downloads); }
 function saveHistory() { store.set('kv.history', state.history); }
 function saveSettings() { store.set('kv.settings', state.settings); }
 
-// ---------- Утилиты ----------
 function fmtTime(sec) {
   if (!sec || !isFinite(sec)) return '0:00';
   sec = Math.round(sec);
@@ -70,7 +68,6 @@ function fileUrl(p) {
   return 'file:///' + p.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/');
 }
 
-// ---------- API (Яндекс Музыка через main-процесс) ----------
 const ymCover = (uri, size) => uri ? 'https://' + String(uri).replace('%%', size) : null;
 
 function normTrack(t) {
@@ -79,6 +76,7 @@ function normTrack(t) {
     source: 'ym',
     title: t.title || 'Без названия',
     artist: (t.artists || []).map(a => a.name).join(', ') || 'Неизвестный артист',
+    artists: (t.artists || []).filter(a => a.id).map(a => ({ id: a.id, name: a.name })),
     album: (t.albums && t.albums[0] && t.albums[0].title) || '',
     art150: ymCover(t.coverUri, '100x100'),
     art480: ymCover(t.coverUri, '400x400'),
@@ -97,7 +95,6 @@ async function ym(path, cacheKey) {
   return res.data;
 }
 
-// Достаёт треки из разных структур ответов Яндекса
 function extractTracks(list) {
   return (list || [])
     .map(x => x.track || x)
@@ -105,29 +102,25 @@ function extractTracks(list) {
     .map(normTrack);
 }
 
-// Прокси для стримов: добавляет CORS, чтобы работал эквалайзер (на мобильном не нужен)
 const proxied = u => window.KV_MOBILE ? u : 'kvs://media/?u=' + encodeURIComponent(u);
 
-// ---------- Аудио + эквалайзер ----------
 const audio = $('#audio');
 const EQ_FREQS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 const EQ_PRESETS = {
-  flat:      { name: 'Ровный',      g: [0,0,0,0,0,0,0,0,0,0] },
-  bass:      { name: 'Бас-буст',    g: [7,6,5,3,1,0,0,0,0,0] },
-  rock:      { name: 'Рок',         g: [5,4,2,0,-1,0,2,3,4,4] },
-  pop:       { name: 'Поп',         g: [-1,0,2,4,5,4,2,0,-1,-1] },
-  electronic:{ name: 'Электроника', g: [6,5,2,0,-2,0,1,3,5,6] },
-  vocal:     { name: 'Вокал',       g: [-2,-2,-1,1,4,5,4,2,0,-1] },
-  treble:    { name: 'Верха',       g: [0,0,0,0,0,1,3,5,6,7] },
-  custom:    { name: 'Свой',        g: null }
+  flat: { name: 'Ровный', g: [0,0,0,0,0,0,0,0,0,0] },
+  bass: { name: 'Бас-буст', g: [7,6,5,3,1,0,0,0,0,0] },
+  rock: { name: 'Рок', g: [5,4,2,0,-1,0,2,3,4,4] },
+  pop: { name: 'Поп', g: [-1,0,2,4,5,4,2,0,-1,-1] },
+  electronic: { name: 'Электроника', g: [6,5,2,0,-2,0,1,3,5,6] },
+  vocal: { name: 'Вокал', g: [-2,-2,-1,1,4,5,4,2,0,-1] },
+  treble: { name: 'Верха', g: [0,0,0,0,0,1,3,5,6,7] },
+  custom: { name: 'Свой', g: null }
 };
 
 let audioCtx = null, eqFilters = [], eqReady = false;
 let preampNode = null, fadeNode = null, panNode = null, compNode = null, stereoGain = null, monoGain = null;
 
 function initEq() {
-  // На мобильном подключается только для same-origin источников (blob/локальный файл),
-  // иначе Web Audio заглушил бы звук — за этим следит playTrack
   if (eqReady) return;
   try {
     audioCtx = new AudioContext();
@@ -144,7 +137,6 @@ function initEq() {
       return flt;
     });
 
-    // цепочка обработки: EQ -> preamp -> фейды -> баланс -> компрессор -> стерео/моно -> выход
     preampNode = audioCtx.createGain();
     fadeNode = audioCtx.createGain();
     panNode = audioCtx.createStereoPanner();
@@ -183,7 +175,6 @@ function applyEq() {
   eqFilters.forEach((f, i) => { f.gain.value = gains[i]; });
 }
 
-// Применяет тонкие настройки воспроизведения (скорость, баланс, моно, нормализация, preamp)
 function applyPlayback() {
   const s = state.settings;
   audio.playbackRate = s.speed || 1;
@@ -201,7 +192,6 @@ function applyPlayback() {
   }
 }
 
-// Плавное затухание в конце и нарастание в начале трека
 function applyFade() {
   if (!eqReady || !fadeNode) return;
   const f = state.settings.fade || 0;
@@ -216,7 +206,6 @@ function applyFade() {
   fadeNode.gain.setTargetAtTime(v, audioCtx.currentTime, 0.12);
 }
 
-// ---------- Плеер ----------
 function buildOrder() {
   state.order = state.queue.map((_, i) => i);
   if (state.shuffle) {
@@ -234,7 +223,6 @@ async function playQueue(tracks, index, name) {
   buildOrder();
   state.orderPos = state.order.indexOf(index);
   if (state.shuffle && state.orderPos !== 0) {
-    // при шаффле стартовый трек — первым
     state.order.splice(state.orderPos, 1);
     state.order.unshift(index);
     state.orderPos = 0;
@@ -242,7 +230,6 @@ async function playQueue(tracks, index, name) {
   await playTrack(state.queue[index]);
 }
 
-// Нужна ли обработка звука (на мобильном она требует полной загрузки трека)
 function needsDsp() {
   const s = state.settings;
   return !!(s.eqOn || s.mono || s.normalize || (s.balance || 0) || (s.preamp || 0) || (s.fade || 0));
@@ -268,16 +255,15 @@ async function playTrack(track) {
       const res = await window.kvinta.ymStreamUrl(track.id);
       if (!res.ok) {
         toast(res.error === 'no-token' || res.error === 'bad-token'
-          ? 'Сервис временно недоступен 😔'
+          ? 'Сервис временно недоступен'
           : 'Не удалось получить поток: ' + res.error);
         return;
       }
       url = res.url;
     }
-    if (!url) { toast('У трека нет ссылки на поток 😔'); return; }
+    if (!url) { toast('У трека нет ссылки на поток'); return; }
 
     if (window.KV_MOBILE && (needsDsp() || eqReady) && window.kvinta.fetchStreamBlobUrl) {
-      // Web Audio глушит кросс-доменные потоки — качаем нативно и играем из blob
       $('#pbArtist').textContent = 'загружаю…';
       const res = await window.kvinta.fetchStreamBlobUrl(url);
       if (res.ok) { src = res.url; sameOrigin = true; }
@@ -287,7 +273,6 @@ async function playTrack(track) {
     }
   }
 
-  // пока грузили поток, пользователь мог включить другой трек
   if (state.current !== track) {
     if (src && src.startsWith('blob:')) URL.revokeObjectURL(src);
     return;
@@ -322,7 +307,7 @@ function nextTrack(auto = false) {
   if (auto && state.sleep.stopAfterTrack) {
     state.sleep.stopAfterTrack = false;
     audio.pause(); updatePlayIcon(); syncSleepUi();
-    toast('Таймер сна: музыка остановлена 🌙');
+    toast('Таймер сна: музыка остановлена');
     return;
   }
   if (auto && state.repeat === 'one') { audio.currentTime = 0; audio.play(); return; }
@@ -346,7 +331,6 @@ function prevTrack() {
 
 function togglePlay() {
   if (!audio.src) {
-    // ничего не выбрано — включаем чарт
     const tr = state.cache['chart-tracks'];
     if (tr && tr.length) playQueue(tr, 0, 'Чарт');
     return;
@@ -355,7 +339,6 @@ function togglePlay() {
   else audio.pause();
 }
 
-// ---------- Нижняя панель ----------
 function updatePlayerBar() {
   const t = state.current;
   if (!t) return;
@@ -370,7 +353,6 @@ function updatePlayerBar() {
   updateMediaSession();
 }
 
-// Метаданные для экрана блокировки / шторки (Media Session API)
 function updateMediaSession() {
   if (!('mediaSession' in navigator) || !state.current) return;
   const t = state.current;
@@ -490,7 +472,6 @@ document.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
 });
 
-// ---------- Избранное / плейлисты / загрузки ----------
 function toggleFav(track) {
   const ids = favIds();
   if (ids.has(track.id)) {
@@ -498,7 +479,7 @@ function toggleFav(track) {
     toast('Убрано из избранного', 1400);
   } else {
     state.favorites.unshift({ ...track });
-    toast('Добавлено в избранное ❤', 1400);
+    toast('Добавлено в избранное', 1400);
   }
   saveFavs();
   updatePlayerBar();
@@ -518,7 +499,7 @@ async function downloadTrack(track, btn) {
   if (res.ok) {
     state.downloads.unshift({ ...track, path: res.path, cover: res.cover });
     saveDls();
-    toast(`Скачано: ${track.title} ✓`);
+    toast(`Скачано: ${track.title}`);
     refreshRowIcons();
     if (state.view === 'downloads') renderView();
   } else {
@@ -535,7 +516,6 @@ function addToPlaylist(plId, track) {
   toast(`Добавлено в «${pl.name}»`, 1600);
 }
 
-// ---------- Модалка с полем ввода ----------
 function askText(title, placeholder, initial = '') {
   return new Promise(resolve => {
     const wrap = document.createElement('div');
@@ -564,7 +544,6 @@ function askText(title, placeholder, initial = '') {
   });
 }
 
-// ---------- Контекстное меню ----------
 function showTrackMenu(x, y, track, ctx) {
   const menu = $('#ctxMenu');
   let html = '<div class="cm-head">Добавить в плейлист</div>';
@@ -572,6 +551,10 @@ function showTrackMenu(x, y, track, ctx) {
   else {
     state.playlists.forEach(p => { html += `<button data-a="pl" data-id="${p.id}">${esc(p.name)}</button>`; });
     html += '<button data-a="newpl">+ Новый плейлист…</button>';
+  }
+  if (track.artists && track.artists.length) {
+    html += '<div class="cm-head">Перейти</div>';
+    track.artists.slice(0, 3).forEach(a => { html += `<button data-a="artist" data-id="${a.id}">${esc(a.name)}</button>`; });
   }
   if (ctx && ctx.playlistId) html += `<div class="cm-head">Плейлист</div><button data-a="rmpl">Убрать из этого плейлиста</button>`;
   if (ctx && ctx.downloads) html += `<div class="cm-head">Загрузки</div><button data-a="rmdl">Удалить файл</button>`;
@@ -586,6 +569,7 @@ function showTrackMenu(x, y, track, ctx) {
     if (!b) return;
     hideMenu();
     const a = b.dataset.a;
+    if (a === 'artist') switchView('artist', b.dataset.id);
     if (a === 'pl') addToPlaylist(b.dataset.id, track);
     if (a === 'newpl') {
       const name = await askText('Новый плейлист', 'Название плейлиста');
@@ -615,7 +599,6 @@ function showTrackMenu(x, y, track, ctx) {
 function hideMenu() { $('#ctxMenu').style.display = 'none'; }
 document.addEventListener('click', e => { if (!e.target.closest('#ctxMenu')) hideMenu(); });
 
-// ---------- Таймер сна ----------
 const SLEEP_OPTS = [[0, 'Выкл'], [15, '15 мин'], [30, '30 мин'], [60, '1 час'], [90, '1,5 часа'], [-1, 'До конца трека']];
 const sleepActive = () => state.sleep.stopAfterTrack ? -1 : (state.sleep.timerId ? state.sleep.minutes : 0);
 
@@ -633,7 +616,7 @@ function setSleep(min) {
   state.sleep = { minutes: 0, until: 0, timerId: null, stopAfterTrack: false };
   if (min === -1) {
     state.sleep.stopAfterTrack = true;
-    toast('Остановлю после этого трека 🌙', 1800);
+    toast('Остановлю после этого трека', 1800);
   } else if (min > 0) {
     state.sleep.minutes = min;
     state.sleep.until = Date.now() + min * 60000;
@@ -641,9 +624,9 @@ function setSleep(min) {
       audio.pause(); updatePlayIcon();
       state.sleep = { minutes: 0, until: 0, timerId: null, stopAfterTrack: false };
       syncSleepUi();
-      toast('Таймер сна: музыка на паузе 🌙');
+      toast('Таймер сна: музыка на паузе');
     }, min * 60000);
-    toast(`Таймер сна: ${min} мин 🌙`, 1800);
+    toast(`Таймер сна: ${min} мин`, 1800);
   } else {
     toast('Таймер сна выключен', 1400);
   }
@@ -678,7 +661,6 @@ function showSleepMenu(x, y) {
   };
 }
 
-// ---------- Построение списков треков ----------
 const SVG = {
   heart: '<svg viewBox="0 0 24 24"><path d="M12 21s-8-5.3-10-10C.6 7.5 3 4 6.5 4 9 4 11 6 12 7.5 13 6 15 4 17.5 4 21 4 23.4 7.5 22 11c-2 4.7-10 10-10 10z"/></svg>',
   dl: '<svg viewBox="0 0 24 24"><path d="M12 3v10l4-4 1.4 1.4L12 15.8 6.6 10.4 8 9l3 3V3zM5 19h14v2H5z"/></svg>',
@@ -703,7 +685,7 @@ function trackListEl(tracks, ctx = {}) {
       <div class="tr-cover" style="${art ? `background-image:url('${art}')` : ''}"></div>
       <div class="tr-main">
         <div class="tr-title">${esc(t.title)}</div>
-        <div class="tr-artist">${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : (t.genre ? ' · ' + esc(t.genre) : '')}</div>
+        <div class="tr-artist"><span class="tr-artist-name">${esc(t.artist)}</span>${t.album ? ' · ' + esc(t.album) : (t.genre ? ' · ' + esc(t.genre) : '')}</div>
       </div>
       <div class="tr-dur">${fmtTime(t.duration)}</div>
       <div class="tr-actions">
@@ -722,6 +704,11 @@ function trackListEl(tracks, ctx = {}) {
       showTrackMenu(r.left, r.bottom + 4, t, ctx);
     });
     row.addEventListener('contextmenu', e => { e.preventDefault(); showTrackMenu(e.clientX, e.clientY, t, ctx); });
+    if (t.artists && t.artists.length) {
+      const an = $('.tr-artist-name', row);
+      an.classList.add('link');
+      an.addEventListener('click', e => { e.stopPropagation(); switchView('artist', t.artists[0].id); });
+    }
     wrap.appendChild(row);
   });
   return wrap;
@@ -764,10 +751,11 @@ function emptyStateHtml(title, text) {
   return `<div class="empty-state">${SVG.note.replace('<svg', '<svg width="64" height="64"')}<h3>${esc(title)}</h3><p>${esc(text)}</p></div>`;
 }
 
-// ---------- Вьюхи ----------
 const container = $('#viewContainer');
+let backTarget = null;
 
 function switchView(view, param = null) {
+  if (view === 'artist' && state.view !== 'artist') backTarget = { view: state.view, param: state.viewParam };
   state.view = view;
   state.viewParam = param;
   $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === view));
@@ -784,22 +772,21 @@ function renderView() {
   if (v === 'playlists') return state.viewParam ? renderPlaylistDetail(state.viewParam) : renderPlaylists();
   if (v === 'downloads') return renderDownloads();
   if (v === 'settings') return renderSettings();
+  if (v === 'artist') return renderArtist(state.viewParam);
 }
 
-// --- Новые треки ---
 async function renderNew() {
   container.innerHTML = `
     <div class="hero">
       <h1>Твоя музыка.<br><span>Твоя волна.</span></h1>
       <p>Весь каталог Яндекс Музыки — слушай онлайн, сохраняй офлайн, собирай свои плейлисты.</p>
       <button class="btn" id="heroPlay">${SVG.play} Слушать чарт</button>
-      <div class="bars">${'<i style="height:VALpx;animation-delay:DELs"></i>'.repeat(1)}</div>
+      <div class="bars"></div>
     </div>
     <div id="secWeek"><h2 class="row-title">В тренде сейчас</h2>${loaderHtml}</div>
     <div id="secUnder"><h2 class="row-title">Андеграунд</h2>${loaderHtml}</div>
     <div id="secMonth"><h2 class="row-title">Топ месяца</h2>${loaderHtml}</div>`;
 
-  // анимированные полоски в хиро
   const bars = $('.hero .bars');
   bars.innerHTML = '';
   for (let i = 0; i < 12; i++) {
@@ -824,7 +811,7 @@ async function renderNew() {
     try {
       const tr = await loadChartTracks();
       playQueue(tr, 0, 'Чарт');
-    } catch { toast('Нет соединения с Яндекс Музыкой 😔'); }
+    } catch { toast('Нет соединения с Яндекс Музыкой'); }
   });
 
   try {
@@ -889,40 +876,136 @@ function albumCardRowEl(albums) {
   return row;
 }
 
-// --- Поиск ---
 let searchTimer = null;
+
+function artistCardRowEl(artists) {
+  const row = document.createElement('div');
+  row.className = 'card-row';
+  artists.forEach(a => {
+    const c = document.createElement('div');
+    c.className = 'card';
+    const cov = a.cover && a.cover.uri ? ymCover(a.cover.uri, '400x400') : null;
+    c.innerHTML = `
+      <div class="card-cover round" style="${cov ? `background-image:url('${cov}')` : ''}"></div>
+      <div class="card-title">${esc(a.name)}</div>
+      <div class="card-sub">${esc((a.genres || [])[0] || 'Артист')}</div>`;
+    c.addEventListener('click', () => switchView('artist', a.id));
+    row.appendChild(c);
+  });
+  return row;
+}
+
+function sectionTitle(box, text) {
+  const h = document.createElement('h2');
+  h.className = 'row-title';
+  h.textContent = text;
+  box.appendChild(h);
+}
+
 function renderSearch() {
   container.innerHTML = `
     <h1 class="page-title">Поиск</h1>
     <div class="search-box">
       <svg viewBox="0 0 24 24"><path d="M10 2a8 8 0 1 0 4.9 14.3l4.4 4.4 1.4-1.4-4.4-4.4A8 8 0 0 0 10 2zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12z"/></svg>
-      <input id="searchInput" type="text" placeholder="Треки, артисты, жанры…" autofocus>
+      <input id="searchInput" type="text" placeholder="Треки, артисты, альбомы…" autofocus>
     </div>
-    <div id="searchResults">${emptyStateHtml('Найди свою музыку', 'Начни печатать — результаты появятся сразу.')}</div>`;
+    <div id="searchResults"></div>`;
   const input = $('#searchInput');
-  input.focus();
+  const box = $('#searchResults');
+  const idle = () => { box.innerHTML = emptyStateHtml('Найди свою музыку', 'Начни печатать — результаты появятся сразу.'); };
+
+  async function run(q) {
+    box.innerHTML = loaderHtml;
+    try {
+      const data = await ym(`/search?text=${encodeURIComponent(q)}&type=all&page=0&nocorrect=false`, 'search-' + q);
+      if ($('#searchInput')?.value.trim() !== q) return;
+      const tracks = extractTracks(data.tracks && data.tracks.results);
+      const artists = ((data.artists && data.artists.results) || []).filter(a => a && a.id);
+      const albums = ((data.albums && data.albums.results) || []).filter(a => a && a.id);
+      box.innerHTML = '';
+      if (!tracks.length && !artists.length && !albums.length) {
+        box.innerHTML = emptyStateHtml('Ничего не нашлось', 'Попробуй другой запрос.');
+        return;
+      }
+      if (artists.length) {
+        sectionTitle(box, 'Артисты');
+        box.appendChild(artistCardRowEl(artists.slice(0, 10)));
+      }
+      if (tracks.length) {
+        sectionTitle(box, 'Треки');
+        box.appendChild(trackListEl(tracks, { name: `Поиск: ${q}` }));
+      }
+      if (albums.length) {
+        sectionTitle(box, 'Альбомы');
+        box.appendChild(albumCardRowEl(albums.slice(0, 12)));
+      }
+      highlightPlaying();
+    } catch {
+      box.innerHTML = emptyStateHtml('Ошибка сети', 'Не удалось выполнить поиск.');
+    }
+  }
+
   input.addEventListener('input', () => {
     clearTimeout(searchTimer);
     const q = input.value.trim();
-    if (!q) { $('#searchResults').innerHTML = emptyStateHtml('Найди свою музыку', 'Начни печатать — результаты появятся сразу.'); return; }
-    searchTimer = setTimeout(async () => {
-      $('#searchResults').innerHTML = loaderHtml;
-      try {
-        const data = await ym(`/search?text=${encodeURIComponent(q)}&type=track&page=0&nocorrect=false`);
-        const tracks = extractTracks(data.tracks && data.tracks.results);
-        if ($('#searchInput')?.value.trim() !== q) return;
-        const box = $('#searchResults');
-        box.innerHTML = tracks.length ? '' : emptyStateHtml('Ничего не нашлось', 'Попробуй другой запрос.');
-        if (tracks.length) box.appendChild(trackListEl(tracks, { name: `Поиск: ${q}` }));
-        highlightPlaying();
-      } catch { $('#searchResults').innerHTML = emptyStateHtml('Ошибка сети', 'Не удалось выполнить поиск.'); }
-    }, 400);
+    state.searchQuery = q;
+    if (!q) { idle(); return; }
+    searchTimer = setTimeout(() => run(q), 350);
   });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && input.value.trim()) {
+      clearTimeout(searchTimer);
+      run(input.value.trim());
+    }
+  });
+
+  if (state.searchQuery) {
+    input.value = state.searchQuery;
+    run(state.searchQuery);
+  } else idle();
+  input.focus();
 }
 
-// --- Для тебя ---
-// Персональные подборки Яндекса (Плейлист дня, Дежавю, Премьера…) +
-// «Похожее» на основе локального избранного. На аккаунт ничего не пишем.
+async function renderArtist(id) {
+  container.innerHTML = loaderHtml;
+  try {
+    const data = await ym(`/artists/${id}/brief-info`, 'artist-' + id);
+    if (state.view !== 'artist' || String(state.viewParam) !== String(id)) return;
+    const a = data.artist || {};
+    const tracks = extractTracks(data.popularTracks);
+    const albums = (data.albums || []).filter(x => x && x.id);
+    const cov = a.cover && a.cover.uri ? ymCover(a.cover.uri, '400x400') : null;
+    container.innerHTML = `
+      <button class="btn secondary" id="artistBack" style="margin-bottom:18px">← Назад</button>
+      <div class="pl-detail-head">
+        <div class="pl-detail-cover round ${cov ? '' : 'pl-cover-gen'}" style="${cov ? `background:url('${cov}') center/cover` : `background:${PL_GRADS[0]}`}">${cov ? '' : esc((a.name || '?')[0].toUpperCase())}</div>
+        <div>
+          <div class="kind">Артист</div>
+          <h1>${esc(a.name || 'Артист')}</h1>
+          <div class="stats">${esc((a.genres || []).join(', '))}</div>
+          <div class="pl-actions">${tracks.length ? `<button class="btn" id="artistPlay">${SVG.play} Слушать</button>` : ''}</div>
+        </div>
+      </div>
+      <div id="artistBody"></div>`;
+    $('#artistBack').addEventListener('click', () => backTarget ? switchView(backTarget.view, backTarget.param) : switchView('new'));
+    if (tracks.length) $('#artistPlay').addEventListener('click', () => playQueue(tracks, 0, a.name));
+    const body = $('#artistBody');
+    if (tracks.length) {
+      sectionTitle(body, 'Популярные треки');
+      body.appendChild(trackListEl(tracks, { name: a.name }));
+    }
+    if (albums.length) {
+      sectionTitle(body, 'Альбомы');
+      body.appendChild(albumCardRowEl(albums.slice(0, 15)));
+    }
+    if (!tracks.length && !albums.length) body.innerHTML = emptyStateHtml('Пусто', 'У этого артиста нет доступных треков.');
+    highlightPlaying();
+  } catch {
+    if (state.view !== 'artist') return;
+    container.innerHTML = emptyStateHtml('Не удалось открыть артиста', 'Проверь соединение и попробуй ещё раз.');
+  }
+}
+
 async function renderForYou() {
   container.innerHTML = `<h1 class="page-title">Для тебя</h1><div id="fyBody">${loaderHtml}</div>`;
   const body = $('#fyBody');
@@ -951,7 +1034,6 @@ async function renderForYou() {
     body.innerHTML = '';
   }
 
-  // Похожее на избранные треки (само избранное хранится только локально)
   const favs = state.favorites.filter(t => t.source === 'ym').slice(0, 3);
   const favSet = favIds();
   for (const f of favs) {
@@ -969,16 +1051,15 @@ async function renderForYou() {
 
   if (!added) {
     body.innerHTML = emptyStateHtml('Подборки не собрались',
-      'Проверь соединение, а также лайкай треки ❤ — появятся разделы «Похоже на…».');
+      'Проверь соединение и лайкай треки — появятся разделы «Похоже на…».');
   }
   highlightPlaying();
 }
 
-// --- Избранное ---
 function renderFavorites() {
   container.innerHTML = `<h1 class="page-title">Избранное</h1>`;
   if (!state.favorites.length) {
-    container.innerHTML += emptyStateHtml('Здесь будут любимые треки', 'Нажимай ❤ на любом треке, чтобы сохранить его сюда.');
+    container.insertAdjacentHTML('beforeend', emptyStateHtml('Здесь будут любимые треки', 'Жми на сердечко у любого трека, чтобы сохранить его сюда.'));
     return;
   }
   const btn = document.createElement('button');
@@ -990,7 +1071,6 @@ function renderFavorites() {
   highlightPlaying();
 }
 
-// --- Плейлисты ---
 const PL_GRADS = [
   'linear-gradient(135deg,#ff1e42,#ff6a3d)', 'linear-gradient(135deg,#b3122f,#ff5c72)',
   'linear-gradient(135deg,#7a0f22,#ff1e42)', 'linear-gradient(135deg,#ff6a3d,#ffb03d)',
@@ -1009,7 +1089,7 @@ function renderPlaylists() {
   container.appendChild(top);
 
   if (!state.playlists.length) {
-    container.innerHTML += emptyStateHtml('Плейлистов пока нет', 'Создай первый — и наполняй его через меню ⋯ у любого трека.');
+    container.insertAdjacentHTML('beforeend', emptyStateHtml('Плейлистов пока нет', 'Создай первый — и наполняй его через меню у любого трека.'));
     return;
   }
   const grid = document.createElement('div');
@@ -1073,7 +1153,7 @@ function renderPlaylistDetail(plId) {
     switchView('playlists');
   });
   const box = $('#plTracks');
-  if (!pl.tracks.length) box.innerHTML = emptyStateHtml('Плейлист пуст', 'Добавляй треки через меню ⋯ в любом списке.');
+  if (!pl.tracks.length) box.innerHTML = emptyStateHtml('Плейлист пуст', 'Добавляй треки через меню в любом списке.');
   else { box.appendChild(trackListEl(pl.tracks, { name: pl.name, playlistId: plId })); highlightPlaying(); }
 }
 
@@ -1089,7 +1169,6 @@ function renderSidebarPlaylists() {
   });
 }
 
-// --- Загрузки ---
 function renderDownloads() {
   container.innerHTML = `<h1 class="page-title">Загрузки</h1>
     <div class="row-sub">${window.KV_MOBILE
@@ -1112,14 +1191,13 @@ function renderDownloads() {
   container.appendChild(bar);
 
   if (!state.downloads.length) {
-    container.innerHTML += emptyStateHtml('Загрузок пока нет', 'Нажми ⬇ на любом треке — он сохранится и будет доступен офлайн.');
+    container.insertAdjacentHTML('beforeend', emptyStateHtml('Загрузок пока нет', 'Нажми кнопку загрузки у любого трека — он сохранится и будет доступен офлайн.'));
     return;
   }
   container.appendChild(trackListEl(state.downloads, { name: 'Загрузки', downloads: true }));
   highlightPlaying();
 }
 
-// --- Обновления ---
 let APP_VERSION = window.KV_VERSION || '';
 let manualCheckPending = false;
 
@@ -1169,7 +1247,7 @@ async function mobileCheckUpdate(manual) {
     if (!manual) toast(`Вышла Kvinta ${r.version} — обновись в настройках`, 4000);
     refreshUpdateBox();
   } else if (manual) {
-    toast(r.ok ? 'У тебя последняя версия ✓' : 'Не удалось проверить: ' + r.error, 2200);
+    toast(r.ok ? 'У тебя последняя версия' : 'Не удалось проверить: ' + r.error, 2200);
   }
 }
 
@@ -1182,7 +1260,7 @@ if (window.KV_MOBILE) {
     state.update = s;
     if (s.state === 'ready') toast(`Обновление ${s.version} готово — установи в настройках`, 4500);
     if (manualCheckPending) {
-      if (s.state === 'none') toast('У тебя последняя версия ✓', 2200);
+      if (s.state === 'none') toast('У тебя последняя версия', 2200);
       if (s.state === 'error') toast('Не удалось проверить: ' + s.error, 2600);
       if (s.state !== 'downloading') manualCheckPending = false;
     }
@@ -1190,7 +1268,6 @@ if (window.KV_MOBILE) {
   });
 }
 
-// --- Настройки ---
 function renderSettings() {
   const s = state.settings;
   const gains = s.eqPreset === 'custom' && s.eqGains ? s.eqGains : (EQ_PRESETS[s.eqPreset] || EQ_PRESETS.flat).g || EQ_PRESETS.flat.g;
@@ -1284,7 +1361,6 @@ function renderSettings() {
       <div id="updBox">${updateBoxHtml()}</div>
     </div>`;
 
-  // --- тонкие настройки воспроизведения ---
   $('#setVolume').addEventListener('input', e => {
     audio.volume = e.target.value / 100;
     s.volume = audio.volume;
@@ -1348,7 +1424,6 @@ function renderSettings() {
   });
 }
 
-// ---------- Мобильный интерфейс: таб-бар и экран «Сейчас играет» ----------
 function syncNp() {
   const np = $('#npSheet');
   if (!np) return;
@@ -1369,7 +1444,6 @@ function syncNp() {
 }
 
 function setupMobileUi() {
-  // нижняя навигация с подписями вместо верхней панели
   const tb = document.createElement('nav');
   tb.id = 'tabbar';
   const shortNames = {
@@ -1386,7 +1460,6 @@ function setupMobileUi() {
   });
   $('#app').appendChild(tb);
 
-  // полноэкранный «Сейчас играет»
   const np = document.createElement('div');
   np.id = 'npSheet';
   np.innerHTML = `
@@ -1418,7 +1491,7 @@ function setupMobileUi() {
       <button class="icon-btn" id="npRepeat"><svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z"/></svg><span class="np-rep1">1</span></button>
     </div>
     <div class="np-extra">
-      <button class="chip" id="npSleep">🌙 Таймер сна</button>
+      <button class="chip" id="npSleep">Таймер сна</button>
       <button class="chip" id="npEq">Звук и эквалайзер</button>
     </div>`;
   document.body.appendChild(np);
@@ -1454,7 +1527,6 @@ function setupMobileUi() {
     }
   });
 
-  // свайп вниз закрывает экран
   let ty = null, dy = 0;
   np.addEventListener('touchstart', e => {
     if (e.target.closest('input,button')) { ty = null; return; }
@@ -1473,7 +1545,6 @@ function setupMobileUi() {
   });
 }
 
-// ---------- Навигация и запуск ----------
 $$('.nav-item').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
 $('#btnNewPlaylist').addEventListener('click', createPlaylistFlow);
 if (window.KV_MOBILE) setupMobileUi();

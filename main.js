@@ -3,11 +3,10 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const { createHash } = require('crypto');
-const { YANDEX_TOKEN, GH_OWNER, GH_REPO, GH_TOKEN } = require('./config');
+const { YANDEX_TOKEN, GH_OWNER, GH_REPO } = require('./config');
 
 let win = null;
 
-// ---------- Автообновление (релизы на GitHub) ----------
 let updateStatus = { state: 'idle' };
 
 function setUpdateStatus(s) {
@@ -19,24 +18,13 @@ function setupAutoUpdate() {
   if (!app.isPackaged) { updateStatus = { state: 'dev' }; return; }
   try {
     const { autoUpdater } = require('electron-updater');
-    autoUpdater.setFeedURL({ provider: 'github', owner: GH_OWNER, repo: GH_REPO, private: true, token: GH_TOKEN });
+    autoUpdater.setFeedURL({ provider: 'github', owner: GH_OWNER, repo: GH_REPO });
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.on('update-available', i => setUpdateStatus({ state: 'downloading', version: i.version }));
     autoUpdater.on('update-not-available', () => setUpdateStatus({ state: 'none' }));
     autoUpdater.on('update-downloaded', i => setUpdateStatus({ state: 'ready', version: i.version }));
-    let triedNoAuth = false;
-    autoUpdater.on('error', e => {
-      const msg = String(e.message || e);
-      // токен могли отозвать — публичные релизы доступны и без него
-      if (!triedNoAuth && /401|403|Bad credentials/i.test(msg)) {
-        triedNoAuth = true;
-        autoUpdater.setFeedURL({ provider: 'github', owner: GH_OWNER, repo: GH_REPO });
-        autoUpdater.checkForUpdates().catch(() => {});
-        return;
-      }
-      setUpdateStatus({ state: 'error', error: msg });
-    });
+    autoUpdater.on('error', e => setUpdateStatus({ state: 'error', error: String(e.message || e) }));
     ipcMain.handle('install-update', () => autoUpdater.quitAndInstall());
     ipcMain.handle('check-update', () => { autoUpdater.checkForUpdates().catch(() => {}); });
     autoUpdater.checkForUpdates().catch(() => {});
@@ -53,8 +41,6 @@ if (!app.isPackaged) {
   ipcMain.handle('check-update', () => {});
 }
 
-// Прокси-схема kvs:// — проксирует аудиопотоки через main-процесс и добавляет
-// CORS-заголовки, чтобы Web Audio (эквалайзер) не глушил звук из-за taint-проверки
 protocol.registerSchemesAsPrivileged([
   { scheme: 'kvs', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }
 ]);
@@ -109,7 +95,6 @@ app.whenReady().then(() => {
   createWindow();
   setupAutoUpdate();
 
-  // Медиаклавиши клавиатуры управляют плеером
   globalShortcut.register('MediaPlayPause', () => win && win.webContents.send('media-key', 'playpause'));
   globalShortcut.register('MediaNextTrack', () => win && win.webContents.send('media-key', 'next'));
   globalShortcut.register('MediaPreviousTrack', () => win && win.webContents.send('media-key', 'prev'));
@@ -123,8 +108,6 @@ app.on('window-all-closed', () => {
   globalShortcut.unregisterAll();
   app.quit();
 });
-
-// ---------- Яндекс Музыка (неофициальный API, аккаунт пользователя) ----------
 
 const YM_BASE = 'https://api.music.yandex.net';
 
@@ -156,7 +139,6 @@ ipcMain.handle('ym-get', async (_ev, pathAndQuery) => {
   }
 });
 
-// Прямая ссылка на mp3-поток трека (схема подписи из клиентов Яндекс Музыки)
 async function ymStreamUrl(trackId) {
   const infos = await ymFetch(`/tracks/${trackId}/download-info`);
   const mp3 = (infos || [])
@@ -182,8 +164,6 @@ ipcMain.handle('ym-stream-url', async (_ev, trackId) => {
   }
 });
 
-// ---------- Загрузки (офлайн-прослушивание) ----------
-
 function safeName(s) {
   return String(s).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 120).trim();
 }
@@ -199,7 +179,6 @@ ipcMain.handle('download-track', async (_ev, track) => {
     const file = path.join(downloadsDir(), `${safeName(track.artist)} - ${safeName(track.title)}.mp3`);
     await fsp.writeFile(file, buf);
 
-    // Обложку тоже сохраняем рядом для офлайна
     let coverFile = null;
     if (track.artwork) {
       try {
