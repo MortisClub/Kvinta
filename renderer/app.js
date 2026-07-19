@@ -13,7 +13,8 @@ const store = {
 
 const DEFAULT_SETTINGS = {
   eqOn: false, eqPreset: 'flat', eqGains: null, volume: 0.8,
-  speed: 1, fade: 0, normalize: false, mono: false, balance: 0, preamp: 0
+  speed: 1, fade: 0, normalize: false, mono: false, balance: 0, preamp: 0,
+  trayClose: true
 };
 
 const state = {
@@ -577,6 +578,211 @@ function addToPlaylist(plId, track) {
   toast(`Добавлено в «${pl.name}»`, 1600);
 }
 
+function addTracksToPlaylist(plId, tracks) {
+  const pl = state.playlists.find(p => p.id === plId);
+  if (!pl) return;
+  const have = new Set(pl.tracks.map(t => t.id));
+  const add = tracks.filter(t => !have.has(t.id));
+  pl.tracks.push(...add.map(t => ({ ...t })));
+  savePls();
+  toast(add.length ? `Добавлено в «${pl.name}»: ${add.length}` : 'Все треки уже в этом плейлисте');
+}
+
+function showPlaylistPickMenu(x, y, tracks, name) {
+  const menu = $('#ctxMenu');
+  menu.innerHTML = '<div class="cm-head">Добавить в плейлист</div>' +
+    state.playlists.map(p => `<button data-a="pl" data-id="${p.id}">${esc(p.name)}</button>`).join('') +
+    '<button data-a="newpl">+ Новый плейлист…</button>';
+  menu.style.display = 'block';
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.max(12, Math.min(x, innerWidth - r.width - 12)) + 'px';
+  menu.style.top = Math.max(12, Math.min(y, innerHeight - r.height - 12)) + 'px';
+  menu.onclick = async e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    hideMenu();
+    if (b.dataset.a === 'pl') { addTracksToPlaylist(b.dataset.id, tracks); return; }
+    const nm = await askText('Новый плейлист', 'Название плейлиста', name || '');
+    if (nm) {
+      state.playlists.push({ id: 'pl' + Date.now(), name: nm, tracks: tracks.map(t => ({ ...t })) });
+      savePls();
+      toast(`Плейлист «${nm}» создан`);
+    }
+  };
+}
+
+async function downloadAll(tracks, btn) {
+  const dls = dlById();
+  const todo = tracks.filter(t => t.source === 'ym' && !dls.has(t.id));
+  if (!todo.length) { toast('Все треки уже скачаны'); return; }
+  const label = btn ? btn.textContent : '';
+  if (btn) btn.disabled = true;
+  const setLabel = txt => { if (btn && btn.isConnected) btn.textContent = txt; };
+  let ok = 0, fail = 0;
+  for (let i = 0; i < todo.length; i++) {
+    const t = todo[i];
+    setLabel(`Скачиваю ${i + 1}/${todo.length}…`);
+    const res = await window.kvinta.downloadTrack({
+      id: t.id, title: t.title, artist: t.artist, source: t.source,
+      artwork: t.art480 || t.art150, streamUrl: t.streamUrl
+    });
+    if (res.ok) {
+      state.downloads.unshift({ ...t, path: res.path, cover: res.cover });
+      saveDls();
+      ok++;
+    } else fail++;
+  }
+  if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = label; }
+  refreshRowIcons();
+  toast(fail ? `Скачано: ${ok}, с ошибкой: ${fail}` : `Скачано треков: ${ok}`);
+}
+
+function pickFiles(accept, multiple) {
+  return new Promise(res => {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = accept;
+    inp.multiple = !!multiple;
+    inp.onchange = () => res([...inp.files]);
+    inp.oncancel = () => res([]);
+    inp.click();
+  });
+}
+
+function parseId3(buf) {
+  const u8 = new Uint8Array(buf);
+  if (u8.length < 10 || u8[0] !== 0x49 || u8[1] !== 0x44 || u8[2] !== 0x33) return {};
+  const ver = u8[3];
+  const synch = o => ((u8[o] & 127) << 21) | ((u8[o + 1] & 127) << 14) | ((u8[o + 2] & 127) << 7) | (u8[o + 3] & 127);
+  const int32 = o => (u8[o] << 24) | (u8[o + 1] << 16) | (u8[o + 2] << 8) | u8[o + 3];
+  const end = Math.min(10 + synch(6), u8.length);
+  const out = {};
+  const text = (enc, b) => {
+    let str;
+    if (enc === 1 || enc === 2) str = new TextDecoder(enc === 2 ? 'utf-16be' : 'utf-16').decode(b);
+    else if (enc === 3) str = new TextDecoder('utf-8').decode(b);
+    else str = new TextDecoder('windows-1251').decode(b);
+    if (str.charCodeAt(0) === 0xFEFF) str = str.slice(1);
+    return str.split('\0')[0].trim();
+  };
+  let pos = 10;
+  if (u8[5] & 0x40) pos += ver >= 4 ? synch(10) : 4 + int32(10);
+  while (pos + 10 <= end) {
+    const id = String.fromCharCode(u8[pos], u8[pos + 1], u8[pos + 2], u8[pos + 3]);
+    if (!/^[A-Z0-9]{4}$/.test(id)) break;
+    const size = ver >= 4 ? synch(pos + 4) : int32(pos + 4);
+    if (size <= 0 || pos + 10 + size > end) break;
+    const body = u8.subarray(pos + 10, pos + 10 + size);
+    if (id === 'TIT2') out.title = text(body[0], body.subarray(1));
+    if (id === 'TPE1') out.artist = text(body[0], body.subarray(1));
+    if (id === 'TALB') out.album = text(body[0], body.subarray(1));
+    if (id === 'APIC' && !out.cover) out.cover = parseApic(body);
+    pos += 10 + size;
+  }
+  return out;
+}
+
+function parseApic(b) {
+  const enc = b[0];
+  let i = 1;
+  while (i < b.length && b[i] !== 0) i++;
+  i += 2;
+  if (enc === 1 || enc === 2) {
+    while (i + 1 < b.length && (b[i] !== 0 || b[i + 1] !== 0)) i += 2;
+    i += 2;
+  } else {
+    while (i < b.length && b[i] !== 0) i++;
+    i += 1;
+  }
+  if (i >= b.length) return null;
+  return b.slice(i).buffer;
+}
+
+function localId(name, size) {
+  let h = 5381;
+  const s = name + size;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return 'loc' + h.toString(36);
+}
+
+function probeDuration(file) {
+  return new Promise(res => {
+    const a = document.createElement('audio');
+    const u = URL.createObjectURL(file);
+    a.preload = 'metadata';
+    a.onloadedmetadata = () => { URL.revokeObjectURL(u); res(a.duration); };
+    a.onerror = () => { URL.revokeObjectURL(u); res(0); };
+    a.src = u;
+  });
+}
+
+async function importMp3Flow() {
+  const files = await pickFiles('audio/mpeg,.mp3', true);
+  if (!files.length) return;
+  let ok = 0;
+  for (const f of files) {
+    const id = localId(f.name, f.size);
+    if (dlById().has(id)) { toast(`«${f.name}» уже в загрузках`); continue; }
+    const buf = await f.arrayBuffer();
+    const tags = parseId3(buf);
+    let title = tags.title || '', artist = tags.artist || '';
+    if (!title) {
+      const base = f.name.replace(/\.mp3$/i, '');
+      const parts = base.split(' - ');
+      if (parts.length >= 2) { artist = artist || parts[0].trim(); title = parts.slice(1).join(' - ').trim(); }
+      else title = base;
+    }
+    artist = artist || 'Неизвестный артист';
+    const res = await window.kvinta.importTrack({ title, artist, mp3: buf, cover: tags.cover || null });
+    if (!res.ok) { toast(`Не удалось импортировать «${title}»: ${res.error}`); continue; }
+    const dur = Math.round(await probeDuration(f)) || 0;
+    const art = res.cover ? fileUrl(res.cover) : null;
+    state.downloads.unshift({
+      id, source: 'local', title, artist, artists: [], album: tags.album || '', albumId: null,
+      art150: art, art480: art, duration: dur, genre: '', path: res.path, cover: res.cover
+    });
+    saveDls();
+    ok++;
+  }
+  if (ok) {
+    toast(`Импортировано треков: ${ok}`);
+    if (state.view === 'downloads') renderView();
+  }
+}
+
+async function changeCoverFlow(track) {
+  const dl = dlById().get(track.id);
+  if (!dl || !dl.path) return;
+  const [f] = await pickFiles('image/*', false);
+  if (!f) return;
+  const res = await window.kvinta.setCover(dl.path, await f.arrayBuffer(), dl.cover || null);
+  if (!res.ok) { toast('Не удалось сохранить обложку: ' + res.error); return; }
+  dl.cover = res.cover;
+  const art = fileUrl(res.cover);
+  dl.art150 = art;
+  dl.art480 = art;
+  saveDls();
+  if (state.current && state.current.id === dl.id) {
+    state.current.art150 = art;
+    state.current.art480 = art;
+  }
+  updatePlayerBar();
+  renderView();
+  toast('Обложка обновлена');
+}
+
+async function verifyDownloads() {
+  if (!state.downloads.length) return;
+  const alive = await Promise.all(state.downloads.map(d => d.path ? window.kvinta.fileExists(d.path) : false));
+  const gone = state.downloads.filter((_, i) => !alive[i]);
+  if (!gone.length) return;
+  state.downloads = state.downloads.filter((_, i) => alive[i]);
+  saveDls();
+  refreshRowIcons();
+  if (state.view === 'downloads') renderView();
+  toast(`Файлы ${gone.length} трек(ов) удалены с диска — убрал их из загрузок`, 3500);
+}
+
 function askText(title, placeholder, initial = '') {
   return new Promise(resolve => {
     const wrap = document.createElement('div');
@@ -610,7 +816,12 @@ function showTrackMenu(x, y, track, ctx) {
   const fav = favIds().has(track.id);
   const downloaded = dlById().has(track.id);
   let html = `<button data-a="fav">${fav ? 'Убрать из избранного' : 'В избранное'}</button>`;
-  html += downloaded ? '<button data-a="rmdl">Удалить загрузку</button>' : '<button data-a="dl">Скачать для офлайна</button>';
+  if (track.source === 'local') {
+    html += '<button data-a="cover">Сменить обложку</button>';
+    if (downloaded) html += '<button data-a="rmdl">Удалить загрузку</button>';
+  } else {
+    html += downloaded ? '<button data-a="rmdl">Удалить загрузку</button>' : '<button data-a="dl">Скачать для офлайна</button>';
+  }
   html += '<div class="cm-head">Добавить в плейлист</div>';
   if (!state.playlists.length) html += '<button data-a="newpl">+ Новый плейлист…</button>';
   else {
@@ -636,6 +847,7 @@ function showTrackMenu(x, y, track, ctx) {
     const a = b.dataset.a;
     if (a === 'fav') toggleFav(track);
     if (a === 'dl') downloadTrack(track);
+    if (a === 'cover') changeCoverFlow(track);
     if (a === 'artist') { closeNpSheet(); switchView('artist', b.dataset.id); }
     if (a === 'album') { closeNpSheet(); switchView('album', b.dataset.id); }
     if (a === 'pl') addToPlaylist(b.dataset.id, track);
@@ -655,7 +867,7 @@ function showTrackMenu(x, y, track, ctx) {
     if (a === 'rmdl') {
       const dl = dlById().get(track.id);
       if (dl) {
-        await window.kvinta.deleteDownload(dl.path);
+        await window.kvinta.deleteDownload(dl.path, dl.cover);
         state.downloads = state.downloads.filter(t => t.id !== track.id);
         saveDls();
         toast('Загрузка удалена');
@@ -692,6 +904,8 @@ function openArtists(e, artists, fallbackId) {
 document.addEventListener('click', e => { if (!e.target.closest('#ctxMenu')) hideMenu(); });
 
 const SLEEP_OPTS = [[0, 'Выкл'], [15, '15 мин'], [30, '30 мин'], [60, '1 час'], [90, '1,5 часа'], [-1, 'До конца трека']];
+const SPEED_OPTS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const FADE_OPTS = [[0, 'выкл'], [2, '2 с'], [4, '4 с'], [6, '6 с'], [8, '8 с'], [12, '12 с']];
 const sleepActive = () => state.sleep.stopAfterTrack ? -1 : (state.sleep.timerId ? state.sleep.minutes : 0);
 
 function sleepStatusText() {
@@ -1015,13 +1229,22 @@ async function renderAlbum(id) {
           <div class="kind">Альбом</div>
           <h1>${esc(album.title || 'Альбом')}</h1>
           <div class="stats">${esc(artist)}${artist && meta ? ' · ' : ''}${esc(meta)}</div>
-          <div class="pl-actions">${tracks.length ? `<button class="btn" id="albumPlay">${SVG.play} Слушать</button>` : ''}</div>
+          <div class="pl-actions">${tracks.length ? `
+            <button class="btn" id="albumPlay">${SVG.play} Слушать</button>
+            <button class="btn secondary" id="albumDl">Скачать альбом</button>
+            <button class="btn secondary" id="albumAddPl">В плейлист</button>` : ''}</div>
         </div>
       </div>
       <div id="albumBody"></div>`;
     $('#albumBack').addEventListener('click', goBack);
     if (tracks.length) {
       $('#albumPlay').addEventListener('click', () => playQueue(tracks, 0, album.title));
+      $('#albumDl').addEventListener('click', e => downloadAll(tracks, e.currentTarget));
+      $('#albumAddPl').addEventListener('click', e => {
+        e.stopPropagation();
+        const r = e.currentTarget.getBoundingClientRect();
+        showPlaylistPickMenu(r.left, r.bottom + 6, tracks, album.title);
+      });
       $('#albumBody').appendChild(trackListEl(tracks, { name: album.title }));
     } else {
       $('#albumBody').innerHTML = emptyStateHtml('Пусто', 'В этом альбоме нет доступных треков.');
@@ -1292,6 +1515,7 @@ function renderPlaylistDetail(plId) {
         <div class="stats">${pl.tracks.length} трек(ов) · ${fmtTime(dur)}</div>
         <div class="pl-actions">
           <button class="btn" id="plPlay">${SVG.play} Слушать</button>
+          <button class="btn secondary" id="plDl">Скачать всё</button>
           <button class="btn secondary" id="plRename">Переименовать</button>
           <button class="btn danger" id="plDelete">Удалить</button>
         </div>
@@ -1299,6 +1523,7 @@ function renderPlaylistDetail(plId) {
     </div>
     <div id="plTracks"></div>`;
   $('#plPlay').addEventListener('click', () => pl.tracks.length && playQueue(pl.tracks, 0, pl.name));
+  $('#plDl').addEventListener('click', e => downloadAll(pl.tracks, e.currentTarget));
   $('#plRename').addEventListener('click', async () => {
     const name = await askText('Переименовать плейлист', 'Новое название', pl.name);
     if (name) { pl.name = name; savePls(); renderView(); }
@@ -1339,6 +1564,10 @@ function renderDownloads() {
     p.addEventListener('click', () => playQueue(state.downloads, 0, 'Загрузки'));
     bar.appendChild(p);
   }
+  const im = document.createElement('button');
+  im.className = 'btn secondary'; im.textContent = 'Импортировать MP3';
+  im.addEventListener('click', importMp3Flow);
+  bar.appendChild(im);
   if (!window.KV_MOBILE) {
     const f = document.createElement('button');
     f.className = 'btn secondary'; f.textContent = 'Открыть папку';
@@ -1457,29 +1686,45 @@ function renderSettings() {
       <div class="hint">Тонкая настройка звука — применяется сразу, без перезапуска трека.</div>
 
       <div class="settings-row mobile-only">
-        <span style="font-weight:600">Громкость <span class="hint-inline" id="volVal">${Math.round((s.volume ?? 0.8) * 100)}%</span></span>
-        <input type="range" id="setVolume" class="h-slider" min="0" max="100" value="${Math.round((s.volume ?? 0.8) * 100)}">
+        <span style="font-weight:600">Громкость</span>
+        <div class="stepper" id="setVolume">
+          <button data-d="-10">−</button>
+          <span class="stepper-val" id="volVal">${Math.round((s.volume ?? 0.8) * 100)}%</span>
+          <button data-d="10">+</button>
+        </div>
       </div>
 
       <div class="settings-row">
-        <span style="font-weight:600">Скорость воспроизведения <span class="hint-inline" id="speedVal">×${(s.speed || 1).toFixed(2)}</span></span>
-        <input type="range" id="setSpeed" class="h-slider" min="50" max="200" step="5" value="${Math.round((s.speed || 1) * 100)}">
+        <span style="font-weight:600">Скорость воспроизведения</span>
+        <div class="chip-row" id="setSpeed">
+          ${SPEED_OPTS.map(v => `<button class="chip ${(s.speed || 1) === v ? 'active' : ''}" data-v="${v}">×${v}</button>`).join('')}
+        </div>
       </div>
 
       <div class="settings-row">
-        <span style="font-weight:600">Плавные переходы <span class="hint-inline" id="fadeVal">${s.fade ? s.fade + ' с' : 'выкл'}</span><br>
+        <span style="font-weight:600">Плавные переходы<br>
           <small class="hint-inline">затухание в конце и нарастание в начале трека</small></span>
-        <input type="range" id="setFade" class="h-slider" min="0" max="12" step="1" value="${s.fade || 0}">
+        <div class="chip-row" id="setFade">
+          ${FADE_OPTS.map(([v, l]) => `<button class="chip ${(s.fade || 0) === v ? 'active' : ''}" data-v="${v}">${l}</button>`).join('')}
+        </div>
       </div>
 
       <div class="settings-row">
-        <span style="font-weight:600">Баланс <span class="hint-inline" id="balVal">${s.balance ? (s.balance < 0 ? 'Л ' + (-s.balance) : 'П ' + s.balance) : 'центр'}</span></span>
-        <input type="range" id="setBalance" class="h-slider" min="-100" max="100" step="5" value="${s.balance || 0}">
+        <span style="font-weight:600">Баланс<br><small class="hint-inline">смещение звука влево или вправо</small></span>
+        <div class="stepper" id="setBalance">
+          <button data-d="-10">−</button>
+          <span class="stepper-val" id="balVal">${s.balance ? (s.balance < 0 ? 'Л ' + (-s.balance) : 'П ' + s.balance) : 'центр'}</span>
+          <button data-d="10">+</button>
+        </div>
       </div>
 
       <div class="settings-row">
-        <span style="font-weight:600">Усиление (preamp) <span class="hint-inline" id="preVal">${s.preamp > 0 ? '+' : ''}${s.preamp || 0} дБ</span></span>
-        <input type="range" id="setPreamp" class="h-slider" min="-6" max="6" step="1" value="${s.preamp || 0}">
+        <span style="font-weight:600">Усиление (preamp)</span>
+        <div class="stepper" id="setPreamp">
+          <button data-d="-1">−</button>
+          <span class="stepper-val" id="preVal">${s.preamp > 0 ? '+' : ''}${s.preamp || 0} дБ</span>
+          <button data-d="1">+</button>
+        </div>
       </div>
 
       <div class="settings-row">
@@ -1508,7 +1753,7 @@ function renderSettings() {
         ${EQ_FREQS.map((f, i) => `
           <div class="eq-band">
             <span class="db" id="db${i}">${gains[i] > 0 ? '+' : ''}${gains[i]}</span>
-            <input type="range" min="-12" max="12" step="1" value="${gains[i]}" data-band="${i}">
+            <div class="eq-col" data-band="${i}"><i></i></div>
             <span class="freq">${f >= 1000 ? (f / 1000) + 'k' : f}</span>
           </div>`).join('')}
       </div>
@@ -1518,6 +1763,15 @@ function renderSettings() {
       <h3>Загрузки</h3>
       <div class="hint">Скачанные треки хранятся в папке Музыка\\Kvinta и играют без интернета.</div>
       <button class="btn secondary" id="openDlFolder">Открыть папку загрузок</button>
+    </div>
+
+    <div class="settings-card desktop-only">
+      <h3>Окно</h3>
+      <div class="settings-row">
+        <span style="font-weight:600">Сворачивать в трей при закрытии<br>
+          <small class="hint-inline">крестик прячет Kvinta в трей, музыка продолжает играть</small></span>
+        <label class="switch"><input type="checkbox" id="setTray" ${s.trayClose !== false ? 'checked' : ''}><i></i></label>
+      </div>
     </div>
 
     <div class="settings-card">
@@ -1545,13 +1799,16 @@ function renderSettings() {
       <div id="updBox">${updateBoxHtml()}</div>
     </div>`;
 
-  $('#setVolume').addEventListener('input', e => {
-    audio.volume = e.target.value / 100;
-    s.volume = audio.volume;
-    $('#volVal').textContent = e.target.value + '%';
+  $('#setVolume').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const v = Math.max(0, Math.min(100, Math.round((s.volume ?? 0.8) * 100) + +b.dataset.d));
+    s.volume = v / 100;
+    audio.volume = s.volume;
+    $('#volVal').textContent = v + '%';
     const pv = $('#pbVolume');
-    pv.value = e.target.value;
-    setRangeFill(pv, +e.target.value, 100);
+    pv.value = v;
+    setRangeFill(pv, v, 100);
     saveSettings();
   });
   $('#sleepChips').addEventListener('click', e => {
@@ -1559,23 +1816,31 @@ function renderSettings() {
     if (b) setSleep(+b.dataset.min);
   });
   bindUpdateBox();
-  $('#setSpeed').addEventListener('input', e => {
-    s.speed = e.target.value / 100;
-    $('#speedVal').textContent = '×' + s.speed.toFixed(2);
+  $('#setSpeed').addEventListener('click', e => {
+    const b = e.target.closest('.chip');
+    if (!b) return;
+    s.speed = +b.dataset.v;
+    $$('#setSpeed .chip').forEach(c => c.classList.toggle('active', +c.dataset.v === s.speed));
     saveSettings(); applyPlayback();
   });
-  $('#setFade').addEventListener('input', e => {
-    s.fade = +e.target.value;
-    $('#fadeVal').textContent = s.fade ? s.fade + ' с' : 'выкл';
+  $('#setFade').addEventListener('click', e => {
+    const b = e.target.closest('.chip');
+    if (!b) return;
+    s.fade = +b.dataset.v;
+    $$('#setFade .chip').forEach(c => c.classList.toggle('active', +c.dataset.v === s.fade));
     saveSettings(); applyFade();
   });
-  $('#setBalance').addEventListener('input', e => {
-    s.balance = +e.target.value;
+  $('#setBalance').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    s.balance = Math.max(-100, Math.min(100, (s.balance || 0) + +b.dataset.d));
     $('#balVal').textContent = s.balance ? (s.balance < 0 ? 'Л ' + (-s.balance) : 'П ' + s.balance) : 'центр';
     saveSettings(); applyPlayback();
   });
-  $('#setPreamp').addEventListener('input', e => {
-    s.preamp = +e.target.value;
+  $('#setPreamp').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    s.preamp = Math.max(-6, Math.min(6, (s.preamp || 0) + +b.dataset.d));
     $('#preVal').textContent = (s.preamp > 0 ? '+' : '') + s.preamp + ' дБ';
     saveSettings(); applyPlayback();
   });
@@ -1590,11 +1855,17 @@ function renderSettings() {
     applyEq();
     applyPlayback();
     applyFade();
+    if (!window.KV_MOBILE && window.kvinta.setTrayMode) window.kvinta.setTrayMode(true);
     renderSettings();
     toast('Настройки сброшены', 1600);
   });
   $('#setNorm').addEventListener('change', e => { s.normalize = e.target.checked; saveSettings(); applyPlayback(); });
   $('#setMono').addEventListener('change', e => { s.mono = e.target.checked; saveSettings(); applyPlayback(); });
+  $('#setTray')?.addEventListener('change', e => {
+    s.trayClose = e.target.checked;
+    saveSettings();
+    if (window.kvinta.setTrayMode) window.kvinta.setTrayMode(s.trayClose);
+  });
 
   $('#eqOn').addEventListener('change', e => {
     s.eqOn = e.target.checked; saveSettings(); applyEq();
@@ -1610,16 +1881,50 @@ function renderSettings() {
     saveSettings(); applyEq(); renderSettings();
   });
 
-  $$('#eqBands input').forEach(inp => {
-    inp.addEventListener('input', () => {
-      const i = +inp.dataset.band, v = +inp.value;
-      if (s.eqPreset !== 'custom') { s.eqGains = [...currentGains()]; s.eqPreset = 'custom';
-        $$('#eqPresets .chip').forEach(c => c.classList.toggle('active', c.dataset.p === 'custom')); }
-      s.eqGains[i] = v;
-      $(`#db${i}`).textContent = (v > 0 ? '+' : '') + v;
-      saveSettings(); applyEq();
-    });
+  const eqCols = $$('#eqBands .eq-col');
+  eqCols.forEach((c, i) => drawEqCol(c, gains[i]));
+
+  function setBand(i, v) {
+    const cur = (s.eqPreset === 'custom' && s.eqGains ? s.eqGains : currentGains())[i];
+    if (cur === v) return;
+    if (s.eqPreset !== 'custom') {
+      s.eqGains = [...currentGains()];
+      s.eqPreset = 'custom';
+      $$('#eqPresets .chip').forEach(c => c.classList.toggle('active', c.dataset.p === 'custom'));
+    }
+    s.eqGains[i] = v;
+    $(`#db${i}`).textContent = (v > 0 ? '+' : '') + v;
+    drawEqCol(eqCols[i], v);
+    saveSettings(); applyEq();
+  }
+
+  const bandGain = (col, y) => {
+    const r = col.getBoundingClientRect();
+    const v = Math.round((1 - (y - r.top) / r.height) * 24 - 12);
+    return Math.max(-12, Math.min(12, v));
+  };
+
+  let dragCol = null;
+  const bands = $('#eqBands');
+  bands.addEventListener('pointerdown', e => {
+    const col = e.target.closest('.eq-col');
+    if (!col) return;
+    dragCol = col;
+    try { col.setPointerCapture(e.pointerId); } catch {}
+    setBand(+col.dataset.band, bandGain(col, e.clientY));
   });
+  bands.addEventListener('pointermove', e => {
+    if (dragCol) setBand(+dragCol.dataset.band, bandGain(dragCol, e.clientY));
+  });
+  bands.addEventListener('pointerup', () => { dragCol = null; });
+  bands.addEventListener('pointercancel', () => { dragCol = null; });
+}
+
+function drawEqCol(col, g) {
+  const bar = $('i', col);
+  bar.style.height = (Math.abs(g) / 12 * 50) + '%';
+  bar.style.top = g < 0 ? '50%' : '';
+  bar.style.bottom = g < 0 ? '' : '50%';
 }
 
 function syncNp() {
@@ -1782,6 +2087,25 @@ $('#btnNewPlaylist').addEventListener('click', createPlaylistFlow);
 if (window.KV_MOBILE) setupMobileUi();
 else setupTooltips();
 
+let miniOn = false;
+$('#pbMini')?.addEventListener('click', async () => {
+  miniOn = !miniOn;
+  if (miniOn) {
+    await window.kvinta.setMiniMode(true);
+    document.body.classList.add('mini');
+  } else {
+    document.body.classList.remove('mini');
+    await window.kvinta.setMiniMode(false);
+  }
+  $('#iconMini').style.display = miniOn ? 'none' : '';
+  $('#iconMiniX').style.display = miniOn ? '' : 'none';
+  $('#pbMini').dataset.tip = miniOn ? 'Развернуть' : 'Мини-плеер';
+});
+
+if (!window.KV_MOBILE && window.kvinta.setTrayMode) {
+  window.kvinta.setTrayMode(state.settings.trayClose !== false);
+}
+
 audio.volume = state.settings.volume ?? 0.8;
 audio.playbackRate = state.settings.speed || 1;
 $('#pbVolume').value = Math.round(audio.volume * 100);
@@ -1789,3 +2113,4 @@ setRangeFill($('#pbVolume'), audio.volume * 100, 100);
 
 renderSidebarPlaylists();
 switchView('new');
+verifyDownloads();

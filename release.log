@@ -1,0 +1,27 @@
+www synced
+√ Copying web assets from www to android\app\src\main\assets\public in 45.04ms
+√ Creating capacitor.config.json in android\app\src\main\assets in 1.53ms
+√ copy android in 114.24ms
+npm notice
+npm notice New major version of npm available! 11.17.0 -> 12.0.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.1
+npm notice To update run: npm install -g npm@12.0.1
+npm notice
+  • electron-builder  version=25.1.8 os=10.0.26200
+  • loaded configuration  file=package.json ("build" field)
+  • executing @electron/rebuild  electronVersion=33.4.11 arch=x64 buildFromSource=false appDir=./
+  • installing native dependencies  arch=x64
+  • completed installing native dependencies
+  • packaging       platform=win32 arch=x64 electron=33.4.11 appOutDir=dist\win-unpacked
+  • copying Electron  source=C:\Users\madne\Documents\Kvinta\node_modules\electron\dist destination=C:\Users\madne\Documents\Kvinta\dist\win-unpacked
+  • updating asar integrity executable resource  executablePath=dist\win-unpacked\Kvinta.exe
+  • signing with signtool.exe  path=dist\win-unpacked\Kvinta.exe
+  • no signing info identified, signing is skipped  signHook=false cscInfo=null
+  • building        target=nsis file=dist\Kvinta-1.0.5-Setup.exe archs=x64 oneClick=false perMachine=false
+  • signing with signtool.exe  path=dist\win-unpacked\resources\elevate.exe
+  • no signing info identified, signing is skipped  signHook=false cscInfo=null
+  • signing with signtool.exe  path=dist\__uninstaller-nsis-kvinta.exe
+  • no signing info identified, signing is skipped  signHook=false cscInfo=null
+  • signing with signtool.exe  path=dist\Kvinta-1.0.5-Setup.exe
+  • no signing info identified, signing is skipped  signHook=false cscInfo=null
+  • building block map  blockMapFile=dist\Kvinta-1.0.5-Setup.exe.blockmap

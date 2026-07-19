@@ -42,6 +42,15 @@ window.KV_MOBILE = true;
     return String(s).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 120).trim();
   }
 
+  function bufToB64(buf) {
+    const u8 = new Uint8Array(buf);
+    let s = '';
+    for (let i = 0; i < u8.length; i += 0x8000) {
+      s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+    }
+    return btoa(s);
+  }
+
   async function fetchB64(url, timeout) {
     const r = await Http.request({
       url, method: 'GET', responseType: 'blob',
@@ -95,6 +104,38 @@ window.KV_MOBILE = true;
           } catch {}
         }
         return { ok: true, path: w.uri, cover: coverUri };
+      } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+      }
+    },
+
+    async importTrack(t) {
+      try {
+        const rel = 'downloads/' + safeName(t.artist) + ' - ' + safeName(t.title) + '.mp3';
+        const w = await FS.writeFile({ path: rel, directory: 'DATA', recursive: true, data: bufToB64(t.mp3) });
+        let coverUri = null;
+        if (t.cover) {
+          try {
+            const cw = await FS.writeFile({
+              path: rel.replace(/\.mp3$/, '.jpg'), directory: 'DATA', recursive: true,
+              data: bufToB64(t.cover)
+            });
+            coverUri = cw.uri;
+          } catch {}
+        }
+        return { ok: true, path: w.uri, cover: coverUri };
+      } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+      }
+    },
+
+    async setCover(trackPath, cover, oldCover) {
+      try {
+        const name = decodeURIComponent(trackPath.split('/').pop());
+        const rel = 'downloads/' + name.replace(/\.mp3$/, '') + '-' + Date.now() + '.jpg';
+        const w = await FS.writeFile({ path: rel, directory: 'DATA', recursive: true, data: bufToB64(cover) });
+        if (oldCover) { try { await FS.deleteFile({ path: oldCover }); } catch {} }
+        return { ok: true, cover: w.uri };
       } catch (e) {
         return { ok: false, error: String(e.message || e) };
       }
@@ -154,9 +195,10 @@ window.KV_MOBILE = true;
       }
     },
 
-    async deleteDownload(p) {
+    async deleteDownload(p, cover) {
       try { await FS.deleteFile({ path: p }); } catch {}
       try { await FS.deleteFile({ path: p.replace(/\.mp3$/, '.jpg') }); } catch {}
+      if (cover) { try { await FS.deleteFile({ path: cover }); } catch {} }
       return true;
     },
 

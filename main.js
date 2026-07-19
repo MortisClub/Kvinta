@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Tray, Menu, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -6,6 +6,15 @@ const { createHash } = require('crypto');
 const { YANDEX_TOKEN, GH_OWNER, GH_REPO } = require('./config');
 
 let win = null;
+let tray = null;
+let quitting = false;
+let trayOnClose = true;
+
+if (!app.requestSingleInstanceLock()) app.quit();
+app.on('second-instance', () => {
+  if (win) { win.show(); win.focus(); }
+});
+app.on('before-quit', () => { quitting = true; });
 
 let updateStatus = { state: 'idle' };
 
@@ -71,7 +80,55 @@ function createWindow() {
   });
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+
+  win.on('close', e => {
+    if (trayOnClose && !quitting) {
+      e.preventDefault();
+      win.hide();
+    }
+  });
 }
+
+function showWin() {
+  if (!win) return;
+  win.show();
+  win.focus();
+}
+
+function setupTray() {
+  tray = new Tray(path.join(__dirname, 'assets', 'icon.ico'));
+  tray.setToolTip('Kvinta');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Открыть Kvinta', click: showWin },
+    { type: 'separator' },
+    { label: 'Выйти', click: () => { quitting = true; app.quit(); } }
+  ]));
+  tray.on('click', showWin);
+}
+
+ipcMain.on('tray-mode', (_ev, on) => { trayOnClose = !!on; });
+
+let miniPrev = null;
+
+ipcMain.handle('mini-mode', (_ev, on) => {
+  if (!win) return;
+  if (on) {
+    if (!miniPrev) miniPrev = win.getBounds();
+    const wa = screen.getPrimaryDisplay().workArea;
+    win.setMinimumSize(360, 96);
+    win.setBounds({ width: 420, height: 96, x: wa.x + wa.width - 436, y: wa.y + 16 });
+    win.setResizable(false);
+    win.setMaximizable(false);
+    win.setAlwaysOnTop(true, 'screen-saver');
+  } else {
+    win.setAlwaysOnTop(false);
+    win.setResizable(true);
+    win.setMaximizable(true);
+    win.setMinimumSize(980, 620);
+    if (miniPrev) win.setBounds(miniPrev);
+    miniPrev = null;
+  }
+});
 
 app.whenReady().then(() => {
   protocol.handle('kvs', async (request) => {
@@ -95,6 +152,7 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  setupTray();
   setupAutoUpdate();
 
   globalShortcut.register('MediaPlayPause', () => win && win.webContents.send('media-key', 'playpause'));
@@ -200,12 +258,46 @@ ipcMain.handle('download-track', async (_ev, track) => {
   }
 });
 
-ipcMain.handle('delete-download', async (_ev, filePath) => {
+ipcMain.handle('import-track', async (_ev, t) => {
+  try {
+    const base = `${safeName(t.artist)} - ${safeName(t.title)}`;
+    let file = path.join(downloadsDir(), base + '.mp3');
+    for (let n = 2; fs.existsSync(file); n++) file = path.join(downloadsDir(), `${base} (${n}).mp3`);
+    await fsp.writeFile(file, Buffer.from(t.mp3));
+
+    let coverFile = null;
+    if (t.cover) {
+      const coversDir = path.join(downloadsDir(), 'covers');
+      await fsp.mkdir(coversDir, { recursive: true });
+      coverFile = path.join(coversDir, path.basename(file, '.mp3') + '.jpg');
+      await fsp.writeFile(coverFile, Buffer.from(t.cover));
+    }
+    return { ok: true, path: file, cover: coverFile };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+});
+
+ipcMain.handle('set-cover', async (_ev, trackPath, cover, oldCover) => {
+  try {
+    const coversDir = path.join(downloadsDir(), 'covers');
+    await fsp.mkdir(coversDir, { recursive: true });
+    const file = path.join(coversDir, path.basename(trackPath, '.mp3') + '-' + Date.now() + '.jpg');
+    await fsp.writeFile(file, Buffer.from(cover));
+    if (oldCover) await fsp.rm(oldCover, { force: true });
+    return { ok: true, cover: file };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+});
+
+ipcMain.handle('delete-download', async (_ev, filePath, coverPath) => {
   try {
     await fsp.rm(filePath, { force: true });
     await fsp.rm(filePath.replace(/\.mp3$/, '.jpg'), { force: true });
     const cover = path.join(path.dirname(filePath), 'covers', path.basename(filePath).replace(/\.mp3$/, '.jpg'));
     await fsp.rm(cover, { force: true });
+    if (coverPath) await fsp.rm(coverPath, { force: true });
     return true;
   } catch {
     return false;

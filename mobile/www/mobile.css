@@ -148,9 +148,8 @@ h2.row-title { font-size: 17px; margin: 20px 0 10px; }
 .pl-detail-cover { width: 140px; height: 140px; }
 
 .settings-row { flex-wrap: wrap; }
-.h-slider { width: 100%; }
 .eq-bands { gap: 3px; }
-.eq-band input[type=range] { width: 30px; height: 132px; }
+.eq-col { width: 30px; height: 132px; }
 
 .ctx-menu { z-index: 400; }
 #toasts {

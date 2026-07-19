@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Kvinta</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="mobile.css">
@@ -121,6 +121,10 @@
         </button>
         <svg class="vol-icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>
         <input type="range" id="pbVolume" min="0" max="100" value="80">
+        <button id="pbMini" class="icon-btn" title="Мини-плеер">
+          <svg id="iconMini" viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zm-2-8h-8v6h8v-6z"/></svg>
+          <svg id="iconMiniX" viewBox="0 0 24 24" style="display:none"><path d="M5 5h6V3H3v8h2zm14 14h-6v2h8v-8h-2zM3 21h8v-2H5v-6H3zM21 3h-8v2h6v6h2z"/></svg>
+        </button>
       </div>
     </footer>
   </div>

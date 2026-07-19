@@ -17,7 +17,7 @@ for (const f of fs.readdirSync(path.join(renderer, 'fonts'))) {
 
 let html = fs.readFileSync(path.join(renderer, 'index.html'), 'utf8');
 html = html.replace('<meta charset="UTF-8">',
-  '<meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">');
+  '<meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">');
 html = html.replace('<link rel="stylesheet" href="styles.css">',
   '<link rel="stylesheet" href="styles.css">\n  <link rel="stylesheet" href="mobile.css">');
 html = html.replace('<script src="app.js"></script>',
