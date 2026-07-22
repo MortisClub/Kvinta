@@ -32,7 +32,12 @@ jobs:
           Set-Content notes.md $section.Groups[1].Value.Trim()
 
           $assets = "dist/Kvinta-$version-Setup.exe", "dist/Kvinta-$version-Setup.exe.blockmap", 'dist/latest.yml'
-          gh release create $tag $assets --title "Kvinta $version" --notes-file notes.md
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $assets --clobber
+          } else {
+            gh release create $tag $assets --title "Kvinta $version" --notes-file notes.md
+          }
 
   android:
     needs: windows
@@ -70,4 +75,4 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           mv mobile/android/app/build/outputs/apk/release/app-release.apk "Kvinta-$version.apk"
-          gh release upload "$GITHUB_REF_NAME" "Kvinta-$version.apk"
+          gh release upload "$GITHUB_REF_NAME" "Kvinta-$version.apk" --clobber
