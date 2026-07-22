@@ -56,7 +56,7 @@ jobs:
       - run: npm ci
         working-directory: mobile
       - run: node mobile/sync.js
-      - run: npx cap copy android
+      - run: npx cap sync android
         working-directory: mobile
 
       - name: assemble
