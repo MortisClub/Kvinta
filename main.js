@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Tray, Menu, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Tray, Menu, screen, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -190,6 +190,67 @@ async function ymFetch(pathAndQuery) {
   const json = await res.json();
   return json.result;
 }
+
+const VK_UA = 'KateMobileAndroid/56 lite-460 (Android 4.4.2; SDK 19; x86; unknown; en)';
+
+ipcMain.handle('vk-auth', async () => {
+  const url = 'https://oauth.vk.com/authorize?client_id=2685278&scope=audio,offline'
+    + '&redirect_uri=https://oauth.vk.com/blank.html&display=mobile&response_type=token&revoke=1&v=5.131';
+
+  const authSession = session.fromPartition('vk-import');
+  await authSession.clearStorageData();
+
+  const authWin = new BrowserWindow({
+    width: 520, height: 700, autoHideMenuBar: true, title: 'Вход ВКонтакте',
+    webPreferences: { session: authSession, nodeIntegration: false, contextIsolation: true }
+  });
+
+  return new Promise(resolve => {
+    let done = false;
+    const finish = async result => {
+      if (done) return;
+      done = true;
+      await authSession.clearStorageData();
+      if (!authWin.isDestroyed()) authWin.destroy();
+      resolve(result);
+    };
+
+    const check = target => {
+      const hash = String(target).split('#')[1] || '';
+      const params = new URLSearchParams(hash);
+      const token = params.get('access_token');
+      if (token) finish({ ok: true, token, userId: params.get('user_id') });
+      else if (params.get('error')) finish({ ok: false, error: params.get('error_description') || params.get('error') });
+    };
+
+    authWin.webContents.on('will-redirect', (_e, target) => check(target));
+    authWin.webContents.on('did-navigate', (_e, target) => check(target));
+    authWin.on('closed', () => finish({ ok: false, error: 'отменено' }));
+    authWin.loadURL(url);
+  });
+});
+
+ipcMain.handle('vk-audio', async (_ev, token, userId) => {
+  try {
+    const out = [];
+    for (let offset = 0; offset < 5000; offset += 200) {
+      const url = `https://api.vk.com/method/audio.get?owner_id=${userId}&count=200&offset=${offset}`
+        + `&access_token=${token}&v=5.131`;
+      const res = await fetch(url, {
+        headers: { 'User-Agent': VK_UA },
+        signal: AbortSignal.timeout(20000)
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error.error_msg || 'ошибка ВК');
+      const items = (json.response && json.response.items) || [];
+      out.push(...items.map(a => ({ artist: a.artist, title: a.title, duration: a.duration })));
+      if (items.length < 200) break;
+    }
+    return { ok: true, tracks: out };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+});
 
 ipcMain.handle('ym-get', async (_ev, pathAndQuery) => {
   try {

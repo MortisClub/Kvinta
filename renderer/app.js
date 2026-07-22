@@ -361,6 +361,7 @@ function updatePlayerBar() {
   const dl = dlById().get(t.id);
   const art = t.art480 || t.art150 || (dl && dl.cover ? fileUrl(dl.cover) : null);
   $('#pbCover').style.backgroundImage = art ? `url("${art}")` : 'none';
+  $('#glassBg').style.backgroundImage = art ? `url("${art}")` : '';
   $('#pbLike').classList.toggle('on', favIds().has(t.id));
   document.title = `${t.title} — ${t.artist} · Kvinta`;
   syncNp();
@@ -376,6 +377,12 @@ function updateMediaSession() {
       artwork: t.art480 ? [{ src: t.art480, sizes: '400x400', type: 'image/jpeg' }] : []
     });
   } catch {}
+  if (window.kvinta.media) {
+    window.kvinta.media.setMetadata({
+      title: t.title, artist: t.artist, album: t.album || 'Kvinta',
+      artwork: t.art480 || t.art150 || '', duration: t.duration || 0
+    });
+  }
 }
 
 function updatePlayIcon() {
@@ -387,6 +394,9 @@ function updatePlayIcon() {
   if (np) { np.style.display = playing ? 'none' : ''; $('#iconNpPause').style.display = playing ? '' : 'none'; }
   if ('mediaSession' in navigator) {
     try { navigator.mediaSession.playbackState = playing ? 'playing' : 'paused'; } catch {}
+  }
+  if (window.kvinta.media) {
+    window.kvinta.media.setState({ playing: !!playing, position: audio.currentTime || 0 });
   }
 }
 
@@ -517,6 +527,19 @@ window.kvinta.onMediaKey(key => {
   if (key === 'next') nextTrack();
   if (key === 'prev') prevTrack();
 });
+
+if (window.kvinta.media) {
+  window.kvinta.media.onTransport(({ action, position }) => {
+    if (action === 'play' && audio.src) { if (audioCtx) audioCtx.resume(); audio.play(); }
+    if (action === 'pause' || action === 'stop') audio.pause();
+    if (action === 'next') nextTrack();
+    if (action === 'previous') prevTrack();
+    if (action === 'seek' && audio.duration) audio.currentTime = position;
+    if (action === 'duck') audio.volume = Math.min(audio.volume, 0.3);
+    if (action === 'unduck') audio.volume = state.settings.volume ?? 0.8;
+  });
+  window.kvinta.media.start();
+}
 
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
@@ -1064,6 +1087,7 @@ function emptyStateHtml(title, text) {
 }
 
 const container = $('#viewContainer');
+const LIBRARY_VIEWS = ['favorites', 'playlists', 'downloads', 'foryou'];
 let navStack = [];
 let backNav = false;
 
@@ -1078,7 +1102,8 @@ function switchView(view, param = null) {
   }
   state.view = view;
   state.viewParam = param;
-  $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  const group = LIBRARY_VIEWS.includes(view) ? 'library' : view;
+  $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === view || b.dataset.view === group));
   renderView();
   $('#main').scrollTop = 0;
 }
@@ -1094,6 +1119,7 @@ function renderView() {
   const v = state.view;
   if (v === 'new') return renderNew();
   if (v === 'search') return renderSearch();
+  if (v === 'library') return renderLibrary();
   if (v === 'foryou') return renderForYou();
   if (v === 'favorites') return renderFavorites();
   if (v === 'playlists') return state.viewParam ? renderPlaylistDetail(state.viewParam) : renderPlaylists();
@@ -1282,6 +1308,53 @@ function sectionTitle(box, text) {
   box.appendChild(h);
 }
 
+const normSearch = s => String(s || '')
+  .toLowerCase()
+  .replace(/ё/g, 'е')
+  .replace(/[^\p{L}\p{N}]+/gu, ' ')
+  .trim();
+
+function scoreTrack(t, tokens, phrase) {
+  const title = normSearch(t.title);
+  const artist = normSearch(t.artist);
+  const hay = `${artist} ${title} ${normSearch(t.album)}`;
+  const hit = tokens.filter(w => hay.includes(w)).length;
+  let score = hit * 20;
+  if (`${artist} ${title}` === phrase || `${title} ${artist}` === phrase) score += 80;
+  else if (title === phrase) score += 60;
+  else if (title.startsWith(phrase) || artist.startsWith(phrase)) score += 25;
+  else if (title.includes(phrase)) score += 15;
+  return { hit, score };
+}
+
+function rankTracks(tracks, q) {
+  const tokens = normSearch(q).split(' ').filter(Boolean);
+  if (!tokens.length) return tracks;
+  const phrase = tokens.join(' ');
+  const seen = new Set();
+  const scored = [];
+  tracks.forEach((t, i) => {
+    const key = `${normSearch(t.artist)}|${normSearch(t.title)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const { hit, score } = scoreTrack(t, tokens, phrase);
+    scored.push({ t, i, hit, score });
+  });
+  const byScore = (a, b) => b.score - a.score || a.i - b.i;
+  const complete = scored.filter(x => x.hit === tokens.length).sort(byScore);
+  const rest = scored.filter(x => x.hit < tokens.length).sort(byScore);
+  return [...complete, ...rest].map(x => x.t);
+}
+
+function rankArtists(artists, q) {
+  const phrase = normSearch(q);
+  const matched = artists.filter(a => {
+    const name = normSearch(a.name);
+    return phrase.includes(name) || name.includes(phrase);
+  });
+  return matched.length ? matched : artists;
+}
+
 function renderSearch() {
   container.innerHTML = `
     <h1 class="page-title">Поиск</h1>
@@ -1297,24 +1370,37 @@ function renderSearch() {
   async function run(q) {
     box.innerHTML = loaderHtml;
     try {
-      const data = await ym(`/search?text=${encodeURIComponent(q)}&type=all&page=0&nocorrect=false`, 'search-' + q);
+      const text = encodeURIComponent(q);
+      const [data, byTrack] = await Promise.all([
+        ym(`/search?text=${text}&type=all&page=0&nocorrect=false`, 'search-' + q),
+        ym(`/search?text=${text}&type=track&page=0&nocorrect=false`, 'search-tracks-' + q)
+      ]);
       if ($('#searchInput')?.value.trim() !== q) return;
-      const tracks = extractTracks(data.tracks && data.tracks.results);
-      const artists = ((data.artists && data.artists.results) || []).filter(a => a && a.id);
+      const best = data.best && data.best.type === 'track' ? extractTracks([data.best.result]) : [];
+      const tracks = rankTracks([
+        ...best,
+        ...extractTracks(data.tracks && data.tracks.results),
+        ...extractTracks(byTrack.tracks && byTrack.tracks.results)
+      ], q);
+      const artists = rankArtists(((data.artists && data.artists.results) || []).filter(a => a && a.id), q);
       const albums = ((data.albums && data.albums.results) || []).filter(a => a && a.id);
       box.innerHTML = '';
       if (!tracks.length && !artists.length && !albums.length) {
         box.innerHTML = emptyStateHtml('Ничего не нашлось', 'Попробуй другой запрос.');
         return;
       }
-      if (artists.length) {
+      const artistsFirst = artists.some(a => normSearch(a.name) === normSearch(q));
+      const artistsBlock = () => {
+        if (!artists.length) return;
         sectionTitle(box, 'Артисты');
         box.appendChild(artistCardRowEl(artists.slice(0, 10)));
-      }
+      };
+      if (artistsFirst) artistsBlock();
       if (tracks.length) {
         sectionTitle(box, 'Треки');
         box.appendChild(trackListEl(tracks, { name: `Поиск: ${q}` }));
       }
+      if (!artistsFirst) artistsBlock();
       if (albums.length) {
         sectionTitle(box, 'Альбомы');
         box.appendChild(albumCardRowEl(albums.slice(0, 12)));
@@ -1434,6 +1520,100 @@ async function renderForYou() {
       'Проверь соединение и лайкай треки — появятся разделы «Похоже на…».');
   }
   highlightPlaying();
+}
+
+async function findInCatalog(artist, title) {
+  const q = `${artist} ${title}`.trim();
+  if (!q) return null;
+  const data = await ym(`/search?text=${encodeURIComponent(q)}&type=track&page=0&nocorrect=false`);
+  const found = rankTracks(extractTracks(data.tracks && data.tracks.results), q);
+  if (!found.length) return null;
+  const tokens = normSearch(q).split(' ').filter(Boolean);
+  const { hit } = scoreTrack(found[0], tokens, tokens.join(' '));
+  return hit === tokens.length ? found[0] : null;
+}
+
+function addToFavorites(tracks) {
+  const have = favIds();
+  const fresh = tracks.filter(t => !have.has(t.id));
+  state.favorites = [...fresh, ...state.favorites];
+  saveFavs();
+  return fresh.length;
+}
+
+async function importFromYandex(onProgress) {
+  const acc = await ym('/account/status');
+  const uid = acc.account && acc.account.uid;
+  if (!uid) throw new Error('не удалось определить аккаунт');
+
+  const likes = await ym(`/users/${uid}/likes/tracks`);
+  const ids = ((likes.library && likes.library.tracks) || []).map(t => t.id);
+  if (!ids.length) return 0;
+
+  const tracks = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const data = await ym(`/tracks?trackIds=${chunk.join(',')}`);
+    tracks.push(...extractTracks(data));
+    onProgress(Math.min(i + 100, ids.length), ids.length);
+  }
+  return addToFavorites(tracks);
+}
+
+async function importFromVk(onProgress) {
+  const auth = await window.kvinta.vkAuth();
+  if (!auth.ok) throw new Error(auth.error || 'вход отменён');
+
+  const list = await window.kvinta.vkAudio(auth.token, auth.userId);
+  if (!list.ok) throw new Error(list.error);
+
+  const found = [];
+  const missed = [];
+  for (let i = 0; i < list.tracks.length; i++) {
+    const a = list.tracks[i];
+    try {
+      const match = await findInCatalog(a.artist, a.title);
+      if (match) found.push(match); else missed.push(`${a.artist} — ${a.title}`);
+    } catch {
+      missed.push(`${a.artist} — ${a.title}`);
+    }
+    onProgress(i + 1, list.tracks.length);
+  }
+  return { added: addToFavorites(found), missed };
+}
+
+function plural(n, one, few, many) {
+  if (n % 100 > 10 && n % 100 < 20) return many;
+  const d = n % 10;
+  if (d === 1) return one;
+  if (d >= 2 && d <= 4) return few;
+  return many;
+}
+
+function renderLibrary() {
+  const nf = state.favorites.length, nd = state.downloads.length, np = state.playlists.length;
+  const rows = [
+    ['favorites', SVG.heart, 'Любимое', `${nf} ${plural(nf, 'трек', 'трека', 'треков')}`],
+    ['playlists', SVG.note, 'Плейлисты', `${np} ${plural(np, 'плейлист', 'плейлиста', 'плейлистов')}`],
+    ['downloads', SVG.dl, 'Офлайн', `${nd} ${plural(nd, 'трек', 'трека', 'треков')}`],
+    ['foryou', SVG.play, 'Для тебя', 'Подборки по вкусу']
+  ];
+  container.innerHTML = `<h1 class="page-title">Моя музыка</h1>`;
+  const list = document.createElement('div');
+  list.className = 'lib-list';
+  rows.forEach(([view, icon, name, sub]) => {
+    const b = document.createElement('button');
+    b.className = 'lib-row';
+    b.innerHTML = `${icon}<span class="lib-name">${name}</span><span class="lib-sub">${sub}</span>`;
+    b.addEventListener('click', () => switchView(view));
+    list.appendChild(b);
+  });
+  container.appendChild(list);
+
+  if (state.history.length) {
+    sectionTitle(container, 'Недавнее');
+    container.appendChild(cardRowEl(state.history.slice(0, 15), 'Недавнее'));
+  }
 }
 
 function renderFavorites() {
@@ -1784,6 +1964,16 @@ function renderSettings() {
     </div>
 
     <div class="settings-card">
+      <h3>Импорт библиотеки</h3>
+      <div class="hint">Заберёт добавленную музыку из другого сервиса в избранное. Треки из ВК ищутся в каталоге Яндекса по артисту и названию.</div>
+      <div class="pl-actions">
+        <button class="btn secondary" id="impYandex">Из Яндекс Музыки</button>
+        <button class="btn secondary" id="impVk">Из ВКонтакте</button>
+      </div>
+      <div class="hint" id="impStatus" style="margin:14px 0 0"></div>
+    </div>
+
+    <div class="settings-card">
       <h3>Сброс настроек</h3>
       <div class="hint">Вернёт звук, эквалайзер, скорость и громкость к значениям по умолчанию. Избранное, плейлисты и загрузки не тронет.</div>
       <button class="btn secondary" id="setReset">Сбросить всё по умолчанию</button>
@@ -1798,6 +1988,40 @@ function renderSettings() {
       </div>
       <div id="updBox">${updateBoxHtml()}</div>
     </div>`;
+
+  const impStatus = $('#impStatus');
+  const impButtons = [$('#impYandex'), $('#impVk')];
+  const runImport = async (btn, job) => {
+    impButtons.forEach(b => { b.disabled = true; });
+    const label = btn.textContent;
+    btn.textContent = 'Импортирую…';
+    try {
+      await job((done, total) => {
+        impStatus.textContent = `Обработано ${done} из ${total}…`;
+      });
+    } catch (e) {
+      impStatus.textContent = 'Не получилось: ' + (e.message || e);
+    } finally {
+      btn.textContent = label;
+      impButtons.forEach(b => { b.disabled = false; });
+    }
+  };
+
+  $('#impYandex').addEventListener('click', e => runImport(e.target, async onProgress => {
+    const added = await importFromYandex(onProgress);
+    impStatus.textContent = added
+      ? `Добавлено ${added} ${plural(added, 'трек', 'трека', 'треков')} в избранное.`
+      : 'Новых треков не нашлось — всё уже в избранном.';
+    if (added) toast(`Импортировано из Яндекса: ${added}`);
+  }));
+
+  $('#impVk').addEventListener('click', e => runImport(e.target, async onProgress => {
+    const { added, missed } = await importFromVk(onProgress);
+    impStatus.textContent = `Добавлено ${added} ${plural(added, 'трек', 'трека', 'треков')}.`
+      + (missed.length ? ` Не нашлось в каталоге: ${missed.length}.` : '');
+    if (missed.length) console.log('Не найдены в каталоге:\n' + missed.join('\n'));
+    if (added) toast(`Импортировано из ВК: ${added}`);
+  }));
 
   $('#setVolume').addEventListener('click', e => {
     const b = e.target.closest('button');
@@ -1949,15 +2173,21 @@ function syncNp() {
 function setupMobileUi() {
   const tb = document.createElement('nav');
   tb.id = 'tabbar';
-  const shortNames = {
-    new: 'Новое', search: 'Поиск', foryou: 'Для тебя', favorites: 'Любимое',
-    playlists: 'Плейлисты', downloads: 'Офлайн', settings: 'Настройки'
-  };
-  $$('.nav-item').forEach(b => {
+  const tabs = [['new', 'Главная'], ['search', 'Поиск'], ['library', 'Моя музыка'], ['settings', 'Ещё']];
+
+  const lib = document.createElement('button');
+  lib.className = 'nav-item';
+  lib.dataset.view = 'library';
+  lib.innerHTML = SVG.note;
+  lib.addEventListener('click', () => switchView('library'));
+  $('#nav').appendChild(lib);
+
+  tabs.forEach(([view, label]) => {
+    const b = $(`.nav-item[data-view="${view}"]`);
     [...b.childNodes].forEach(n => { if (n.nodeType === 3) n.remove(); });
     const lbl = document.createElement('span');
     lbl.className = 'tab-label';
-    lbl.textContent = shortNames[b.dataset.view] || '';
+    lbl.textContent = label;
     b.appendChild(lbl);
     tb.appendChild(b);
   });

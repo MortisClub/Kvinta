@@ -1,4 +1,11 @@
 
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+input, textarea { -webkit-user-select: text; user-select: text; }
+button, a, .card, .track-row, .nav-item, .chip, .icon-btn { outline: none; }
+
 .desktop-only { display: none !important; }
 .settings-row.mobile-only { display: flex !important; }
 .hint.mobile-only { display: block !important; }
@@ -59,27 +66,51 @@ h2.row-title { font-size: 17px; margin: 20px 0 10px; }
   grid-area: tabbar;
   display: flex;
   background: var(--panel);
+  backdrop-filter: var(--glass);
+  box-shadow: var(--glass-edge);
   border-top: 1px solid var(--line);
-  padding: 4px 2px calc(4px + env(safe-area-inset-bottom));
+  padding: 8px 6px calc(8px + env(safe-area-inset-bottom));
 }
 #tabbar .nav-item {
   flex: 1 1 0;
   min-width: 0;
   flex-direction: column;
-  gap: 3px;
-  padding: 7px 0 5px;
-  border-radius: 10px;
+  gap: 5px;
+  padding: 8px 0 6px;
+  border-radius: 14px;
+  background: transparent;
 }
-#tabbar .nav-item svg { width: 21px; height: 21px; }
+#tabbar .nav-item svg { width: 26px; height: 26px; }
+#tabbar .nav-item.active { background: rgba(255, 30, 66, .14); }
 #tabbar .tab-label {
-  font-size: 8.5px; font-weight: 600; letter-spacing: .2px;
+  font-size: 11px; font-weight: 600; letter-spacing: .1px;
   white-space: nowrap; overflow: hidden; max-width: 100%;
 }
 
+.lib-list { display: flex; flex-direction: column; gap: 10px; }
+.lib-row {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  backdrop-filter: var(--glass);
+  box-shadow: var(--glass-edge);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.lib-row svg { width: 22px; height: 22px; fill: var(--accent); }
+.lib-name { font: 600 16px 'Inter', sans-serif; }
+.lib-sub { color: var(--muted); font-size: 13px; }
+
 #npSheet {
   position: fixed; inset: 0; z-index: 350;
-  background: var(--bg-grad);
-  background-color: var(--bg);
+  background: rgba(13, 7, 9, .55);
+  backdrop-filter: saturate(180%) blur(40px);
   display: flex; flex-direction: column;
   padding: calc(14px + env(safe-area-inset-top)) 22px calc(22px + env(safe-area-inset-bottom));
   transform: translateY(103%);

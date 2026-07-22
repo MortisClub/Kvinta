@@ -19,10 +19,12 @@
 :root {
   --bg: #0d0709;
   --bg-grad: radial-gradient(1200px 700px at 75% -10%, #3a0d18 0%, #16090d 45%, #0d0709 100%);
-  --panel: #160a0f;
-  --card: #1f1016;
-  --card-hover: #2b161e;
-  --line: rgba(255, 255, 255, 0.07);
+  --panel: rgba(22, 10, 15, 0.55);
+  --card: rgba(255, 255, 255, 0.055);
+  --card-hover: rgba(255, 255, 255, 0.105);
+  --line: rgba(255, 255, 255, 0.1);
+  --glass: saturate(170%) blur(26px);
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.13);
   --accent: #ff1e42;
   --accent-2: #ff6a3d;
   --accent-grad: linear-gradient(135deg, #ff1e42 0%, #ff6a3d 100%);
@@ -39,10 +41,21 @@
 html, body { height: 100%; }
 body {
   font-family: 'Inter', 'Segoe UI', sans-serif;
-  background: var(--bg);
+  background: var(--bg-grad), var(--bg);
   color: var(--text);
   overflow: hidden;
   user-select: none;
+}
+
+#glassBg {
+  position: fixed;
+  inset: -15%;
+  z-index: -1;
+  background: center/cover no-repeat;
+  filter: blur(80px) saturate(180%);
+  opacity: .55;
+  transition: opacity .5s ease;
+  pointer-events: none;
 }
 
 #app {
@@ -59,6 +72,7 @@ body {
   align-items: center;
   padding: 0 14px;
   background: var(--panel);
+  backdrop-filter: var(--glass);
   border-bottom: 1px solid var(--line);
   -webkit-app-region: drag;
 }
@@ -73,6 +87,7 @@ body {
 #sidebar {
   grid-area: sidebar;
   background: var(--panel);
+  backdrop-filter: var(--glass);
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
@@ -140,7 +155,6 @@ body {
 
 #main {
   grid-area: main;
-  background: var(--bg-grad);
   overflow-y: auto;
   scroll-behavior: smooth;
 }
@@ -203,10 +217,13 @@ h2.row-title {
   gap: 18px;
   overflow-x: auto;
   padding-bottom: 10px;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
+.card-row::-webkit-scrollbar { display: none; }
 .card {
   background: var(--card);
+  backdrop-filter: var(--glass);
+  box-shadow: var(--glass-edge);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 12px;
@@ -313,6 +330,7 @@ h2.row-title {
 .search-box {
   display: flex; align-items: center; gap: 12px;
   background: var(--card); border: 1px solid var(--line);
+  backdrop-filter: var(--glass); box-shadow: var(--glass-edge);
   border-radius: 999px; padding: 13px 22px; margin-bottom: 24px;
   transition: border-color .15s, box-shadow .15s;
 }
@@ -337,6 +355,7 @@ h2.row-title {
 
 .settings-card {
   background: var(--card); border: 1px solid var(--line);
+  backdrop-filter: var(--glass); box-shadow: var(--glass-edge);
   border-radius: var(--radius); padding: 22px 24px; margin-bottom: 18px;
 }
 .settings-card h3 { font-family: 'Montserrat', sans-serif; font-size: 16px; margin-bottom: 4px; }
@@ -373,7 +392,7 @@ h2.row-title {
 .eq-presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
 .chip {
   padding: 7px 16px; border-radius: 999px; border: 1px solid var(--line);
-  background: transparent; color: var(--muted);
+  background: var(--card); color: var(--muted);
   font: 600 12.5px 'Inter', sans-serif; cursor: pointer;
   transition: all .15s;
 }
@@ -413,8 +432,9 @@ select.kv-select {
 #playerbar {
   grid-area: player;
   height: 92px;
-  background: rgba(16, 8, 11, 0.92);
-  backdrop-filter: blur(18px);
+  background: var(--panel);
+  backdrop-filter: var(--glass);
+  box-shadow: var(--glass-edge);
   border-top: 1px solid var(--line);
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(380px, 2fr) minmax(180px, 1fr);
@@ -484,9 +504,10 @@ select.kv-select {
 
 .ctx-menu {
   position: fixed; z-index: 200;
-  background: #241219; border: 1px solid rgba(255,255,255,.1);
-  border-radius: 12px; padding: 6px;
-  box-shadow: var(--shadow);
+  background: rgba(36, 18, 25, 0.72); border: 1px solid rgba(255,255,255,.14);
+  backdrop-filter: var(--glass);
+  border-radius: 14px; padding: 6px;
+  box-shadow: var(--shadow), var(--glass-edge);
   min-width: 210px;
 }
 .ctx-menu .cm-head { padding: 8px 12px 4px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
@@ -517,10 +538,11 @@ select.kv-select {
   display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
 }
 .toast {
-  background: #2a1219; border: 1px solid rgba(255,30,66,.35);
+  background: rgba(42, 18, 25, 0.72); border: 1px solid rgba(255,30,66,.35);
+  backdrop-filter: var(--glass);
   color: var(--text); font-size: 13.5px;
-  padding: 12px 18px; border-radius: 12px;
-  box-shadow: var(--shadow);
+  padding: 12px 18px; border-radius: 14px;
+  box-shadow: var(--shadow), var(--glass-edge);
   animation: toastIn .25s ease;
   max-width: 340px;
 }

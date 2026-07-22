@@ -8,6 +8,15 @@ require('../main.js');
 const OUT = path.join(__dirname, '..', 'docs', 'screens');
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
+async function settle(win) {
+  for (let i = 0; i < 60; i++) {
+    const loading = await win.webContents.executeJavaScript(`!!document.querySelector('.loader')`, true);
+    if (!loading) break;
+    await delay(250);
+  }
+  await delay(700);
+}
+
 async function shot(win, name) {
   const img = await win.webContents.capturePage();
   fs.mkdirSync(OUT, { recursive: true });
@@ -25,6 +34,23 @@ app.whenReady().then(async () => {
     `(async () => { const tr = await loadChartTracks(); await playQueue(tr, 0, 'Чарт'); })()`, true);
   await delay(4000);
   await shot(win, 'desktop-home.png');
+
+  const artistId = await win.webContents.executeJavaScript(
+    `(async () => { const tr = await loadChartTracks(); return tr.find(t => t.artists.length).artists[0].id; })()`, true);
+  await win.webContents.executeJavaScript(`switchView('artist', ${artistId})`, true);
+  await settle(win);
+  await shot(win, 'desktop-artist.png');
+
+  await win.webContents.executeJavaScript(`switchView('search')`, true);
+  await delay(600);
+  await win.webContents.executeJavaScript(`
+    const box = document.getElementById('searchInput');
+    box.value = 'три дня дождя демоны';
+    box.dispatchEvent(new Event('input'));
+    undefined`, true);
+  await delay(1200);
+  await settle(win);
+  await shot(win, 'desktop-search.png');
 
   await win.webContents.executeJavaScript(`switchView('settings')`, true);
   await delay(1000);
@@ -52,7 +78,9 @@ app.whenReady().then(async () => {
   await delay(6000);
   await mw.webContents.executeJavaScript(
     `(async () => { const tr = await loadChartTracks(); await playQueue(tr, 1, 'Чарт'); })()`, true);
-  await delay(3500);
+  await delay(1500);
+  await mw.webContents.executeJavaScript(`closeNpSheet(); switchView('new'); undefined`, true);
+  await settle(mw);
   await shot(mw, 'mobile-home.png');
 
   await mw.webContents.executeJavaScript(
@@ -60,5 +88,24 @@ app.whenReady().then(async () => {
   await delay(1200);
   await shot(mw, 'mobile-player.png');
 
+  await mw.webContents.executeJavaScript(
+    `document.getElementById('npSheet').classList.remove('open'); switchView('library'); undefined`, true);
+  await delay(1200);
+  await shot(mw, 'mobile-library.png');
+
+  await mw.webContents.executeJavaScript(`switchView('search'); undefined`, true);
+  await delay(600);
+  await mw.webContents.executeJavaScript(`
+    const box = document.getElementById('searchInput');
+    box.value = 'три дня дождя демоны';
+    box.dispatchEvent(new Event('input'));
+    undefined`, true);
+  await delay(1200);
+  await settle(mw);
+  await shot(mw, 'mobile-search.png');
+
   app.exit(0);
+}).catch(err => {
+  console.error(err);
+  app.exit(1);
 });

@@ -7,6 +7,8 @@ window.KV_MOBILE = true;
   const Cap = window.Capacitor;
   const FS = Cap.Plugins.Filesystem;
   const Http = Cap.Plugins.CapacitorHttp;
+  const Audio = Cap.Plugins.KvintaAudio;
+  const VK_UA = 'KateMobileAndroid/56 lite-460 (Android 4.4.2; SDK 19; x86; unknown; en)';
 
   const ymHeaders = () => ({
     'Authorization': 'OAuth ' + TOKEN,
@@ -207,7 +209,40 @@ window.KV_MOBILE = true;
       catch { return false; }
     },
 
+    async vkAuth() {
+      try { return await Cap.Plugins.VkAuth.login(); }
+      catch (e) { return { ok: false, error: String(e.message || e) }; }
+    },
+
+    async vkAudio(token, userId) {
+      try {
+        const out = [];
+        for (let offset = 0; offset < 5000; offset += 200) {
+          const r = await Http.request({
+            url: 'https://api.vk.com/method/audio.get',
+            method: 'GET',
+            headers: { 'User-Agent': VK_UA },
+            params: { owner_id: String(userId), count: '200', offset: String(offset), access_token: token, v: '5.131' }
+          });
+          if (r.data && r.data.error) throw new Error(r.data.error.error_msg || 'ошибка ВК');
+          const items = (r.data.response && r.data.response.items) || [];
+          out.push(...items.map(a => ({ artist: a.artist, title: a.title, duration: a.duration })));
+          if (items.length < 200) break;
+        }
+        return { ok: true, tracks: out };
+      } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+      }
+    },
+
     async openDownloadsFolder() {},
-    onMediaKey() {}
+    onMediaKey() {},
+
+    media: {
+      start() { Audio.start().catch(() => {}); },
+      setMetadata(meta) { Audio.setMetadata(meta).catch(() => {}); },
+      setState(s) { Audio.setState(s).catch(() => {}); },
+      onTransport(cb) { Audio.addListener('transport', cb); }
+    }
   };
 })();

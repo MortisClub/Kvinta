@@ -1,6 +1,13 @@
 node_modules/
 err.log
 out.log
-mobile/android/
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/local.properties
+mobile/android/capacitor-cordova-android-plugins/
+mobile/android/app/src/main/assets/public/
+mobile/android/app/src/main/assets/capacitor.config.json
+mobile/android/app/src/main/assets/capacitor.plugins.json
 *.apk
 dist/

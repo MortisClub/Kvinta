@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('kvinta', {
   ym: (pathAndQuery) => ipcRenderer.invoke('ym-get', pathAndQuery),
+  vkAuth: () => ipcRenderer.invoke('vk-auth'),
+  vkAudio: (token, userId) => ipcRenderer.invoke('vk-audio', token, userId),
   ymStreamUrl: (trackId) => ipcRenderer.invoke('ym-stream-url', trackId),
   downloadTrack: (track) => ipcRenderer.invoke('download-track', track),
   importTrack: (track) => ipcRenderer.invoke('import-track', track),
