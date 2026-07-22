@@ -11,3 +11,5 @@ mobile/android/app/src/main/assets/capacitor.config.json
 mobile/android/app/src/main/assets/capacitor.plugins.json
 *.apk
 dist/
+keys/
+*.jks

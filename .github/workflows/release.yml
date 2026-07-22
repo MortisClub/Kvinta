@@ -1,0 +1,73 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx electron-builder --win --publish never
+
+      - name: publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $version = $tag.TrimStart('v')
+          $section = [regex]::Match((Get-Content CHANGELOG.md -Raw),
+            "(?ms)^## \[$([regex]::Escape($version))\][^\n]*\n(.+?)(?=^## |\z)")
+          if (-not $section.Success) { throw "нет раздела $version в CHANGELOG.md" }
+          Set-Content notes.md $section.Groups[1].Value.Trim()
+
+          $assets = "dist/Kvinta-$version-Setup.exe", "dist/Kvinta-$version-Setup.exe.blockmap", 'dist/latest.yml'
+          gh release create $tag $assets --title "Kvinta $version" --notes-file notes.md
+
+  android:
+    needs: windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - run: npm ci
+      - run: npm ci
+        working-directory: mobile
+      - run: node mobile/sync.js
+      - run: npx cap copy android
+        working-directory: mobile
+
+      - name: assemble
+        working-directory: mobile/android
+        env:
+          ORG_GRADLE_PROJECT_kvintaStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_kvintaKeyPassword: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          echo '${{ secrets.KEYSTORE_BASE64 }}' | base64 -d > kvinta-release.jks
+          export ORG_GRADLE_PROJECT_kvintaStoreFile="$PWD/kvinta-release.jks"
+          ./gradlew assembleRelease --no-daemon
+
+      - name: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mv mobile/android/app/build/outputs/apk/release/app-release.apk "Kvinta-$version.apk"
+          gh release upload "$GITHUB_REF_NAME" "Kvinta-$version.apk"
